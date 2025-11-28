@@ -93,7 +93,7 @@ func (b *Bridge) Start(ctx context.Context) error {
 func (b *Bridge) Stop() {
 	b.logger.Info("Stopping bridge")
 	close(b.done)
-	
+
 	if b.kafkaClient != nil {
 		if err := b.kafkaClient.Close(); err != nil {
 			b.logger.Error("Error closing Kafka client", zap.Error(err))

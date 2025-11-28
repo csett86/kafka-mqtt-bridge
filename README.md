@@ -103,11 +103,61 @@ docker run -d \
 
 ## Development
 
-### Running Tests
+### Running Unit Tests
 
 ```bash
 make test
 ```
+
+### Running Integration Tests
+
+Integration tests require Docker and Docker Compose to run the Kafka and MQTT broker infrastructure.
+
+```bash
+# Run integration tests (starts/stops infrastructure automatically)
+make integration-test
+
+# Or manually control the infrastructure:
+make integration-up          # Start Kafka and MQTT brokers
+make integration-test-only   # Run tests (infrastructure must be running)
+make integration-down        # Stop and clean up infrastructure
+```
+
+You can also run integration tests directly with Go:
+
+```bash
+# Start infrastructure
+docker compose -f docker-compose.integration.yml up -d
+
+# Wait for services to be ready (about 30 seconds)
+sleep 30
+
+# Run tests
+go test -v ./test/integration/...
+
+# Clean up
+docker compose -f docker-compose.integration.yml down -v
+```
+
+#### Integration Test Cases
+
+The integration tests cover:
+
+- **Kafka Producer/Consumer**: Tests basic Kafka message round-trip
+- **MQTT Publish/Subscribe**: Tests basic MQTT message round-trip
+- **Kafka to MQTT Bridge**: Tests message flow from Kafka to MQTT
+- **MQTT to Kafka Bridge**: Tests message flow from MQTT to Kafka
+- **Concurrent Messages**: Tests handling of concurrent message flows
+- **Large Message Payloads**: Tests handling of large (10KB) message payloads
+- **Connection Resilience**: Tests reconnection behavior after connection close
+
+#### Environment Variables
+
+You can customize test configuration with environment variables:
+
+- `TEST_KAFKA_BROKERS`: Kafka broker address (default: `localhost:9092`)
+- `TEST_MQTT_BROKER`: MQTT broker host (default: `localhost`)
+- `TEST_MQTT_PORT`: MQTT broker port (default: `1883`)
 
 ### Code Formatting
 
@@ -139,25 +189,30 @@ make clean
 kafka-mqtt-bridge/
 ├── cmd/
 │   └── bridge/
-│       └── main.go           # Application entry point
+│       └── main.go                       # Application entry point
 ├── internal/
 │   ├── bridge/
-│   │   └── bridge.go         # Core bridge logic
+│   │   └── bridge.go                     # Core bridge logic
 │   ├── kafka/
-│   │   └── kafka.go          # Kafka client
+│   │   └── kafka.go                      # Kafka client
 │   └── mqtt/
-│       └── mqtt.go           # MQTT client
+│       └── mqtt.go                       # MQTT client
 ├── pkg/
 │   └── config/
-│       └── config.go         # Configuration management
+│       └── config.go                     # Configuration management
+├── test/
+│   ├── integration/
+│   │   └── integration_test.go           # Integration tests
+│   └── mosquitto.conf                    # Mosquitto config for tests
 ├── config/
-│   └── config.yaml           # Configuration file
-├── go.mod                     # Go module definition
-├── go.sum                     # Go module checksums
-├── Makefile                   # Build and development tasks
-├── Dockerfile                 # Docker image definition
-├── .gitignore                 # Git ignore rules
-└── README.md                  # This file
+│   └── config.yaml                       # Configuration file
+├── docker-compose.integration.yml        # Docker Compose for integration tests
+├── go.mod                                 # Go module definition
+├── go.sum                                 # Go module checksums
+├── Makefile                               # Build and development tasks
+├── Dockerfile                             # Docker image definition
+├── .gitignore                             # Git ignore rules
+└── README.md                              # This file
 ```
 
 ## Dependencies
