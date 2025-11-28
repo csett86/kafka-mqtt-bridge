@@ -4,13 +4,13 @@
 // To run the integration tests:
 //
 //  1. Start the test infrastructure:
-//     docker-compose -f docker-compose.integration.yml up -d
+//     docker compose -f docker-compose.integration.yml up -d
 //
 //  2. Wait for services to be ready, then run:
-//     go test -v -tags=integration ./test/integration/...
+//     go test -v ./test/integration/...
 //
 //  3. Clean up:
-//     docker-compose -f docker-compose.integration.yml down
+//     docker compose -f docker-compose.integration.yml down
 package integration
 
 import (
