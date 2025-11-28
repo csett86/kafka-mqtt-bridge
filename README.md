@@ -1,0 +1,180 @@
+# Kafka-MQTT Bridge
+
+A Go application that bridges messages between Apache Kafka and MQTT brokers. This service reads messages from a Kafka topic and publishes them to an MQTT topic, enabling seamless integration between these two popular messaging systems.
+
+## Features
+
+- Bidirectional message bridging between Kafka and MQTT
+- Configurable Kafka and MQTT connection settings
+- Graceful shutdown handling
+- Comprehensive logging with Zap
+- Docker support for containerized deployment
+- Production-ready code structure following Go best practices
+
+## Prerequisites
+
+- Go 1.21 or higher
+- Apache Kafka 2.8+
+- MQTT Broker (e.g., Mosquitto, HiveMQ)
+- Docker and Docker Compose (optional, for containerized setup)
+
+## Installation
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/csett86/kafka-mqtt-bridge.git
+cd kafka-mqtt-bridge
+```
+
+### Build from Source
+
+```bash
+make build
+```
+
+This will create a binary in the `bin/` directory.
+
+## Configuration
+
+Create a `config/config.yaml` file or copy from the example:
+
+```bash
+cp config/config.yaml config/local.yaml
+```
+
+Edit the configuration file with your Kafka and MQTT settings:
+
+```yaml
+kafka:
+  brokers:
+    - "localhost:9092"
+  topic: "events"
+  group_id: "kafka-mqtt-bridge"
+
+mqtt:
+  broker: "localhost"
+  port: 1883
+  username: ""
+  password: ""
+  topic: "mqtt/events"
+  client_id: "kafka-mqtt-bridge"
+
+bridge:
+  name: "kafka-mqtt-bridge"
+  log_level: "info"
+  buffer_size: 100
+```
+
+## Usage
+
+### Running Locally
+
+```bash
+# With default config
+go run ./cmd/bridge/main.go
+
+# With custom config
+go run ./cmd/bridge/main.go -config config/local.yaml
+```
+
+### Running the Binary
+
+```bash
+./bin/kafka-mqtt-bridge -config config/config.yaml
+```
+
+### Docker Deployment
+
+Build the Docker image:
+
+```bash
+docker build -t kafka-mqtt-bridge:latest .
+```
+
+Run the container:
+
+```bash
+docker run -d \
+  --name kafka-mqtt-bridge \
+  -v $(pwd)/config:/app/config \
+  kafka-mqtt-bridge:latest
+```
+
+## Development
+
+### Running Tests
+
+```bash
+make test
+```
+
+### Code Formatting
+
+```bash
+make fmt
+```
+
+### Linting
+
+```bash
+make lint
+```
+
+### Building
+
+```bash
+make build
+```
+
+### Clean Up
+
+```bash
+make clean
+```
+
+## Project Structure
+
+```
+kafka-mqtt-bridge/
+├── cmd/
+│   └── bridge/
+│       └── main.go           # Application entry point
+├── internal/
+│   ├── bridge/
+│   │   └── bridge.go         # Core bridge logic
+│   ├── kafka/
+│   │   └── kafka.go          # Kafka client
+│   └── mqtt/
+│       └── mqtt.go           # MQTT client
+├── pkg/
+│   └── config/
+│       └── config.go         # Configuration management
+├── config/
+│   └── config.yaml           # Configuration file
+├── go.mod                     # Go module definition
+├── go.sum                     # Go module checksums
+├── Makefile                   # Build and development tasks
+├── Dockerfile                 # Docker image definition
+├── .gitignore                 # Git ignore rules
+└── README.md                  # This file
+```
+
+## Dependencies
+
+- `github.com/segmentio/kafka-go` - Kafka client library
+- `github.com/eclipse/paho.mqtt.golang` - MQTT client library
+- `go.uber.org/zap` - Structured logging
+- `gopkg.in/yaml.v3` - YAML configuration parsing
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Support
+
+For issues and questions, please open an issue on GitHub or contact the maintainers.
