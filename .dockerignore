@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build output
+bin/
+dist/
+vendor/
+
+# Testing
+coverage.out
+coverage.html
+*.test
+
+# CI/CD
+.github/
+
+# Documentation
+docs/
+*.md
+
+# Misc
+.env
+.env.local
+config/local.yaml
+logs/
