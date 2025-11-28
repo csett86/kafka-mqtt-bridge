@@ -1,0 +1,21 @@
+# Kafka Configuration
+kafka:
+  brokers:
+    - "localhost:9092"
+  topic: "events"
+  group_id: "kafka-mqtt-bridge"
+
+# MQTT Configuration
+mqtt:
+  broker: "localhost"
+  port: 1883
+  username: ""
+  password: ""
+  topic: "mqtt/events"
+  client_id: "kafka-mqtt-bridge"
+
+# Bridge Configuration
+bridge:
+  name: "kafka-mqtt-bridge"
+  log_level: "info"
+  buffer_size: 100
