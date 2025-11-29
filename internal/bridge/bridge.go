@@ -36,7 +36,7 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 
 	// Initialize Kafka client with separate read/write topics
 	kafkaClient, err := kafka.NewClient(
-		cfg.Kafka.Brokers,
+		cfg.Kafka.Broker,
 		cfg.Kafka.SourceTopic,
 		kafkaDestTopic,
 		cfg.Kafka.GroupID,

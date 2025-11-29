@@ -21,20 +21,20 @@ type Client struct {
 	reader       *kafka.Reader
 	writer       *kafka.Writer
 	dynamicWrite bool // If true, topic is specified per message
-	brokers      []string
+	broker       string
 	logger       *zap.Logger
 }
 
 // NewClient creates a new Kafka client with separate read and write topics
-func NewClient(brokers []string, readTopic string, writeTopic string, groupID string, logger *zap.Logger) (*Client, error) {
-	if len(brokers) == 0 {
-		return nil, fmt.Errorf("no kafka brokers provided")
+func NewClient(broker string, readTopic string, writeTopic string, groupID string, logger *zap.Logger) (*Client, error) {
+	if broker == "" {
+		return nil, fmt.Errorf("no kafka broker provided")
 	}
 
 	var reader *kafka.Reader
 	if readTopic != "" {
 		reader = kafka.NewReader(kafka.ReaderConfig{
-			Brokers:     brokers,
+			Brokers:     []string{broker},
 			Topic:       readTopic,
 			GroupID:     groupID,
 			StartOffset: kafka.FirstOffset, // Start from beginning for new consumer groups
@@ -45,7 +45,7 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 	var writer *kafka.Writer
 	if !dynamicWrite {
 		writer = &kafka.Writer{
-			Addr:                   kafka.TCP(brokers...),
+			Addr:                   kafka.TCP(broker),
 			Topic:                  writeTopic,
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
@@ -53,7 +53,7 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 	} else {
 		// Create a writer without a fixed topic for dynamic topic mapping
 		writer = &kafka.Writer{
-			Addr:                   kafka.TCP(brokers...),
+			Addr:                   kafka.TCP(broker),
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
 		}
@@ -63,7 +63,7 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 		reader:       reader,
 		writer:       writer,
 		dynamicWrite: dynamicWrite,
-		brokers:      brokers,
+		broker:       broker,
 		logger:       logger,
 	}, nil
 }

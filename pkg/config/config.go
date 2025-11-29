@@ -29,7 +29,7 @@ type TopicMapping struct {
 
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
-	Brokers       []string       `yaml:"brokers"`
+	Broker        string         `yaml:"broker"`
 	SourceTopic   string         `yaml:"source_topic"`   // Topic to read from (for Kafka→MQTT) - deprecated, use topic_mappings
 	SourceTopics  []string       `yaml:"source_topics"`  // Multiple topics to read from (for Kafka→MQTT)
 	DestTopic     string         `yaml:"dest_topic"`     // Topic to write to (for MQTT→Kafka) - deprecated, use topic_mappings
