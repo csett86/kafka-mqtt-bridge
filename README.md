@@ -8,7 +8,6 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers. Th
 - Configurable Kafka and MQTT connection settings
 - Graceful shutdown handling
 - Comprehensive logging with Zap
-- Docker support for containerized deployment
 - Production-ready code structure following Go best practices
 
 ## Prerequisites
@@ -16,7 +15,7 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers. Th
 - Go 1.21 or higher
 - Apache Kafka 2.8+
 - MQTT Broker (e.g., Mosquitto, HiveMQ)
-- Docker and Docker Compose (optional, for containerized setup)
+- Docker and Docker Compose (optional, for integration tests)
 
 ## Installation
 
@@ -90,23 +89,6 @@ go run ./cmd/bridge/main.go -config config/local.yaml
 ./bin/kafka-mqtt-bridge -config config/config.yaml
 ```
 
-### Docker Deployment
-
-Build the Docker image:
-
-```bash
-docker build -t kafka-mqtt-bridge:latest .
-```
-
-Run the container:
-
-```bash
-docker run -d \
-  --name kafka-mqtt-bridge \
-  -v $(pwd)/config:/app/config \
-  kafka-mqtt-bridge:latest
-```
-
 ## Development
 
 ### Running Unit Tests
@@ -153,9 +135,6 @@ The integration tests cover:
 - **MQTT Publish/Subscribe**: Tests basic MQTT message round-trip
 - **Kafka to MQTT Bridge**: Tests message flow from Kafka to MQTT
 - **MQTT to Kafka Bridge**: Tests message flow from MQTT to Kafka
-- **Concurrent Messages**: Tests handling of concurrent message flows
-- **Large Message Payloads**: Tests handling of large (10KB) message payloads
-- **Connection Resilience**: Tests reconnection behavior after connection close
 
 #### Environment Variables
 
