@@ -17,14 +17,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
-	"github.com/csett86/kafka-mqtt-bridge/internal/bridge"
-	"github.com/csett86/kafka-mqtt-bridge/pkg/config"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/segmentio/kafka-go"
-	"go.uber.org/zap"
 )
 
 // Test configuration - can be overridden via environment variables
@@ -100,38 +100,58 @@ func checkMQTTConnection() error {
 	return nil
 }
 
-// TestKafkaToMQTTBridge tests the actual bridge component:
-// 1. Starts the bridge
+// TestKafkaToMQTTBridge tests the actual bridge component using the built binary:
+// 1. Builds and starts the bridge binary
 // 2. Publishes a message to Kafka
 // 3. Verifies the bridge forwards it to MQTT
 func TestKafkaToMQTTBridge(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	// Use unique topics for this test
-	kafkaTopic := fmt.Sprintf("test-bridge-kafka-%d", time.Now().UnixNano())
-	mqttTopic := fmt.Sprintf("mqtt/bridge/test/%d", time.Now().UnixNano())
-	testMessage := fmt.Sprintf("bridge-test-message-%d", time.Now().UnixNano())
+	testID := time.Now().UnixNano()
+	kafkaTopic := fmt.Sprintf("test-bridge-kafka-%d", testID)
+	mqttTopic := fmt.Sprintf("mqtt/bridge/test/%d", testID)
+	testMessage := fmt.Sprintf("bridge-test-message-%d", testID)
 
-	// Create a test configuration for the bridge
-	cfg := &config.Config{
-		Kafka: config.KafkaConfig{
-			Brokers:     []string{kafkaBrokers},
-			SourceTopic: kafkaTopic,
-			GroupID:     fmt.Sprintf("test-bridge-group-%d", time.Now().UnixNano()),
-		},
-		MQTT: config.MQTTConfig{
-			Broker:    mqttBroker,
-			Port:      mqttPort,
-			DestTopic: mqttTopic,
-			ClientID:  fmt.Sprintf("test-bridge-%d", time.Now().UnixNano()),
-		},
-		Bridge: config.BridgeConfig{
-			Name:       "test-bridge",
-			LogLevel:   "debug",
-			BufferSize: 100,
-		},
+	// Create a temporary config file for the bridge
+	configContent := fmt.Sprintf(`
+kafka:
+  brokers:
+    - "%s"
+  source_topic: "%s"
+  group_id: "test-bridge-group-%d"
+
+mqtt:
+  broker: "%s"
+  port: %d
+  dest_topic: "%s"
+  client_id: "test-bridge-%d"
+
+bridge:
+  name: "test-bridge"
+  log_level: "debug"
+  buffer_size: 100
+`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+
+	// Create temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
 	}
+
+	t.Logf("Created config file at: %s", configPath)
+
+	// Build the bridge binary
+	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
+	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
+	buildCmd.Dir = getProjectRoot()
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
+	}
+
+	t.Logf("Built bridge binary at: %s", binaryPath)
 
 	// Setup MQTT subscriber to receive messages from the bridge
 	receivedMessages := make(chan string, 10)
@@ -141,45 +161,39 @@ func TestKafkaToMQTTBridge(t *testing.T) {
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
-	// Create a logger for the bridge
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		t.Fatalf("Failed to create logger: %v", err)
-	}
-	defer logger.Sync()
+	// Start the bridge binary
+	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
+	bridgeCmd.Dir = tmpDir
+	bridgeCmd.Stdout = os.Stdout
+	bridgeCmd.Stderr = os.Stderr
 
-	// Create and start the bridge
-	b, err := bridge.New(cfg, logger)
-	if err != nil {
-		t.Fatalf("Failed to create bridge: %v", err)
+	if err := bridgeCmd.Start(); err != nil {
+		t.Fatalf("Failed to start bridge: %v", err)
 	}
 
-	// Start bridge in background
-	bridgeCtx, bridgeCancel := context.WithCancel(ctx)
-	bridgeDone := make(chan struct{})
-	go func() {
-		defer close(bridgeDone)
-		if err := b.Start(bridgeCtx); err != nil {
-			t.Logf("Bridge stopped with error: %v", err)
+	// Ensure we clean up the process
+	defer func() {
+		if bridgeCmd.Process != nil {
+			_ = bridgeCmd.Process.Signal(syscall.SIGTERM)
+			_ = bridgeCmd.Wait()
 		}
 	}()
 
+	t.Log("Bridge binary started, waiting for it to initialize...")
+
 	// Give bridge time to start
-	time.Sleep(1 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	// Setup Kafka writer to publish message
 	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
 	defer kafkaWriter.Close()
 
 	// Publish message to Kafka - the bridge should forward it to MQTT
-	err = writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+	err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
 		Key:   []byte("test-key"),
 		Value: []byte(testMessage),
 	}, 10)
 	if err != nil {
-		bridgeCancel()
-		<-bridgeDone
-		b.Stop()
 		t.Fatalf("Failed to write message to Kafka: %v", err)
 	}
 
@@ -193,26 +207,22 @@ func TestKafkaToMQTTBridge(t *testing.T) {
 		} else {
 			t.Logf("Successfully received bridged message on MQTT: %s", received)
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Error("Timeout waiting for bridged message on MQTT")
 	}
-
-	// Cleanup: stop the bridge
-	bridgeCancel()
-	<-bridgeDone
-	b.Stop()
 
 	t.Log("Successfully tested Kafka to MQTT bridge flow")
 }
 
-// TestBridgeMultipleMessages tests the bridge with multiple messages
+// TestBridgeMultipleMessages tests the bridge with multiple messages using the built binary
 func TestBridgeMultipleMessages(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	// Use unique topics for this test
-	kafkaTopic := fmt.Sprintf("test-bridge-multi-%d", time.Now().UnixNano())
-	mqttTopic := fmt.Sprintf("mqtt/bridge/multi/%d", time.Now().UnixNano())
+	testID := time.Now().UnixNano()
+	kafkaTopic := fmt.Sprintf("test-bridge-multi-%d", testID)
+	mqttTopic := fmt.Sprintf("mqtt/bridge/multi/%d", testID)
 
 	testMessages := []string{
 		"bridge-message-1",
@@ -220,24 +230,41 @@ func TestBridgeMultipleMessages(t *testing.T) {
 		"bridge-message-3",
 	}
 
-	// Create a test configuration for the bridge
-	cfg := &config.Config{
-		Kafka: config.KafkaConfig{
-			Brokers:     []string{kafkaBrokers},
-			SourceTopic: kafkaTopic,
-			GroupID:     fmt.Sprintf("test-bridge-multi-group-%d", time.Now().UnixNano()),
-		},
-		MQTT: config.MQTTConfig{
-			Broker:    mqttBroker,
-			Port:      mqttPort,
-			DestTopic: mqttTopic,
-			ClientID:  fmt.Sprintf("test-bridge-multi-%d", time.Now().UnixNano()),
-		},
-		Bridge: config.BridgeConfig{
-			Name:       "test-bridge-multi",
-			LogLevel:   "debug",
-			BufferSize: 100,
-		},
+	// Create a temporary config file for the bridge
+	configContent := fmt.Sprintf(`
+kafka:
+  brokers:
+    - "%s"
+  source_topic: "%s"
+  group_id: "test-bridge-multi-group-%d"
+
+mqtt:
+  broker: "%s"
+  port: %d
+  dest_topic: "%s"
+  client_id: "test-bridge-multi-%d"
+
+bridge:
+  name: "test-bridge-multi"
+  log_level: "debug"
+  buffer_size: 100
+`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+
+	// Create temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	t.Logf("Created config file at: %s", configPath)
+
+	// Build the bridge binary
+	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
+	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
+	buildCmd.Dir = getProjectRoot()
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
 	}
 
 	// Setup MQTT subscriber to receive messages from the bridge
@@ -248,31 +275,28 @@ func TestBridgeMultipleMessages(t *testing.T) {
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
-	// Create a logger for the bridge
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		t.Fatalf("Failed to create logger: %v", err)
-	}
-	defer logger.Sync()
+	// Start the bridge binary
+	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
+	bridgeCmd.Dir = tmpDir
+	bridgeCmd.Stdout = os.Stdout
+	bridgeCmd.Stderr = os.Stderr
 
-	// Create and start the bridge
-	b, err := bridge.New(cfg, logger)
-	if err != nil {
-		t.Fatalf("Failed to create bridge: %v", err)
+	if err := bridgeCmd.Start(); err != nil {
+		t.Fatalf("Failed to start bridge: %v", err)
 	}
 
-	// Start bridge in background
-	bridgeCtx, bridgeCancel := context.WithCancel(ctx)
-	bridgeDone := make(chan struct{})
-	go func() {
-		defer close(bridgeDone)
-		if err := b.Start(bridgeCtx); err != nil {
-			t.Logf("Bridge stopped with error: %v", err)
+	// Ensure we clean up the process
+	defer func() {
+		if bridgeCmd.Process != nil {
+			_ = bridgeCmd.Process.Signal(syscall.SIGTERM)
+			_ = bridgeCmd.Wait()
 		}
 	}()
 
+	t.Log("Bridge binary started, waiting for it to initialize...")
+
 	// Give bridge time to start
-	time.Sleep(1 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	// Setup Kafka writer to publish messages
 	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
@@ -284,14 +308,11 @@ func TestBridgeMultipleMessages(t *testing.T) {
 		if i > 0 {
 			retries = 3
 		}
-		err = writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+		err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
 			Key:   []byte(fmt.Sprintf("key-%d", i)),
 			Value: []byte(msg),
 		}, retries)
 		if err != nil {
-			bridgeCancel()
-			<-bridgeDone
-			b.Stop()
 			t.Fatalf("Failed to write message %d to Kafka: %v", i, err)
 		}
 		t.Logf("Published message to Kafka: %s", msg)
@@ -315,11 +336,6 @@ collectLoop:
 		}
 	}
 
-	// Cleanup: stop the bridge
-	bridgeCancel()
-	<-bridgeDone
-	b.Stop()
-
 	// Verify all messages were received
 	if len(received) != len(testMessages) {
 		t.Fatalf("Expected %d messages, got %d", len(testMessages), len(received))
@@ -334,64 +350,79 @@ collectLoop:
 	t.Log("Successfully tested bridge with multiple messages")
 }
 
-// TestMQTTToKafkaBridge tests the bridge component for MQTT→Kafka direction:
-// 1. Starts the bridge
+// TestMQTTToKafkaBridge tests the bridge component for MQTT→Kafka direction using the built binary:
+// 1. Builds and starts the bridge binary
 // 2. Publishes a message to MQTT
 // 3. Verifies the bridge forwards it to Kafka
 func TestMQTTToKafkaBridge(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	// Use unique topics for this test
-	mqttTopic := fmt.Sprintf("mqtt/to-kafka/test/%d", time.Now().UnixNano())
-	kafkaTopic := fmt.Sprintf("test-mqtt-to-kafka-%d", time.Now().UnixNano())
-	testMessage := fmt.Sprintf("mqtt-to-kafka-test-message-%d", time.Now().UnixNano())
+	testID := time.Now().UnixNano()
+	mqttTopic := fmt.Sprintf("mqtt/to-kafka/test/%d", testID)
+	kafkaTopic := fmt.Sprintf("test-mqtt-to-kafka-%d", testID)
+	testMessage := fmt.Sprintf("mqtt-to-kafka-test-message-%d", testID)
 
-	// Create a test configuration for the bridge (MQTT→Kafka only)
-	cfg := &config.Config{
-		Kafka: config.KafkaConfig{
-			Brokers:   []string{kafkaBrokers},
-			DestTopic: kafkaTopic,
-			GroupID:   fmt.Sprintf("test-mqtt-to-kafka-group-%d", time.Now().UnixNano()),
-		},
-		MQTT: config.MQTTConfig{
-			Broker:      mqttBroker,
-			Port:        mqttPort,
-			SourceTopic: mqttTopic,
-			ClientID:    fmt.Sprintf("test-mqtt-to-kafka-%d", time.Now().UnixNano()),
-		},
-		Bridge: config.BridgeConfig{
-			Name:       "test-mqtt-to-kafka",
-			LogLevel:   "debug",
-			BufferSize: 100,
-		},
+	// Create a temporary config file for the bridge (MQTT→Kafka only)
+	configContent := fmt.Sprintf(`
+kafka:
+  brokers:
+    - "%s"
+  dest_topic: "%s"
+  group_id: "test-mqtt-to-kafka-group-%d"
+
+mqtt:
+  broker: "%s"
+  port: %d
+  source_topic: "%s"
+  client_id: "test-mqtt-to-kafka-%d"
+
+bridge:
+  name: "test-mqtt-to-kafka"
+  log_level: "debug"
+  buffer_size: 100
+`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+
+	// Create temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
 	}
 
-	// Create a logger for the bridge
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		t.Fatalf("Failed to create logger: %v", err)
-	}
-	defer logger.Sync() //nolint:errcheck
+	t.Logf("Created config file at: %s", configPath)
 
-	// Create and start the bridge
-	b, err := bridge.New(cfg, logger)
-	if err != nil {
-		t.Fatalf("Failed to create bridge: %v", err)
+	// Build the bridge binary
+	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
+	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
+	buildCmd.Dir = getProjectRoot()
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
 	}
 
-	// Start bridge in background
-	bridgeCtx, bridgeCancel := context.WithCancel(ctx)
-	bridgeDone := make(chan struct{})
-	go func() {
-		defer close(bridgeDone)
-		if err := b.Start(bridgeCtx); err != nil {
-			t.Logf("Bridge stopped with error: %v", err)
+	// Start the bridge binary
+	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
+	bridgeCmd.Dir = tmpDir
+	bridgeCmd.Stdout = os.Stdout
+	bridgeCmd.Stderr = os.Stderr
+
+	if err := bridgeCmd.Start(); err != nil {
+		t.Fatalf("Failed to start bridge: %v", err)
+	}
+
+	// Ensure we clean up the process
+	defer func() {
+		if bridgeCmd.Process != nil {
+			_ = bridgeCmd.Process.Signal(syscall.SIGTERM)
+			_ = bridgeCmd.Wait()
 		}
 	}()
 
+	t.Log("Bridge binary started, waiting for it to initialize...")
+
 	// Give bridge time to start and subscribe
-	time.Sleep(1 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	// Setup Kafka reader to consume messages forwarded by the bridge
 	kafkaReader := setupKafkaReader(t, kafkaTopic)
@@ -404,23 +435,17 @@ func TestMQTTToKafkaBridge(t *testing.T) {
 	// Publish message to MQTT - the bridge should forward it to Kafka
 	token := mqttPublisher.Publish(mqttTopic, 1, false, []byte(testMessage))
 	if token.Wait() && token.Error() != nil {
-		bridgeCancel()
-		<-bridgeDone
-		b.Stop()
 		t.Fatalf("Failed to publish message to MQTT: %v", token.Error())
 	}
 
 	t.Logf("Published message to MQTT topic %s: %s", mqttTopic, testMessage)
 
 	// Wait for the message to appear on Kafka (forwarded by the bridge)
-	readCtx, readCancel := context.WithTimeout(ctx, 10*time.Second)
+	readCtx, readCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer readCancel()
 
 	msg, err := kafkaReader.ReadMessage(readCtx)
 	if err != nil {
-		bridgeCancel()
-		<-bridgeDone
-		b.Stop()
 		t.Fatalf("Failed to read message from Kafka: %v", err)
 	}
 
@@ -430,11 +455,6 @@ func TestMQTTToKafkaBridge(t *testing.T) {
 	} else {
 		t.Logf("Successfully received bridged message on Kafka: %s", received)
 	}
-
-	// Cleanup: stop the bridge
-	bridgeCancel()
-	<-bridgeDone
-	b.Stop()
 
 	t.Log("Successfully tested MQTT to Kafka bridge flow")
 }
