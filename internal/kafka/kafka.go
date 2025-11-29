@@ -2,7 +2,9 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/segmentio/kafka-go"
@@ -12,20 +14,27 @@ import (
 const (
 	// maxWriteRetries is the maximum number of retries for transient write errors
 	maxWriteRetries = 10
-	// retryBackoff is the delay between retries
+	// retryBackoff is the initial delay between retries
 	retryBackoff = 500 * time.Millisecond
+	// maxRetryBackoff is the maximum delay between retries
+	maxRetryBackoff = 30 * time.Second
+	// readRetryDelay is the delay before retrying a failed read
+	readRetryDelay = 1 * time.Second
 )
 
-// Client wraps the Kafka reader and writer
+// Client wraps the Kafka reader and writer with connection recovery support
 type Client struct {
 	reader       *kafka.Reader
 	writer       *kafka.Writer
 	dynamicWrite bool // If true, topic is specified per message
 	broker       string
+	readTopic    string
+	groupID      string
 	logger       *zap.Logger
 }
 
 // NewClient creates a new Kafka client with separate read and write topics
+// and connection recovery support
 func NewClient(broker string, readTopic string, writeTopic string, groupID string, logger *zap.Logger) (*Client, error) {
 	if broker == "" {
 		return nil, fmt.Errorf("no kafka broker provided")
@@ -34,10 +43,18 @@ func NewClient(broker string, readTopic string, writeTopic string, groupID strin
 	var reader *kafka.Reader
 	if readTopic != "" {
 		reader = kafka.NewReader(kafka.ReaderConfig{
-			Brokers:     []string{broker},
-			Topic:       readTopic,
-			GroupID:     groupID,
-			StartOffset: kafka.FirstOffset, // Start from beginning for new consumer groups
+			Brokers:        []string{broker},
+			Topic:          readTopic,
+			GroupID:        groupID,
+			StartOffset:    kafka.FirstOffset, // Start from beginning for new consumer groups
+			CommitInterval: 1 * time.Second,   // Commit offsets periodically for recovery
+			// Connection recovery settings
+			MaxAttempts:       0, // Unlimited retries for connection failures
+			ReadBackoffMin:    100 * time.Millisecond,
+			ReadBackoffMax:    1 * time.Second,
+			HeartbeatInterval: 3 * time.Second,
+			SessionTimeout:    30 * time.Second,
+			RebalanceTimeout:  30 * time.Second,
 		})
 	}
 
@@ -49,6 +66,12 @@ func NewClient(broker string, readTopic string, writeTopic string, groupID strin
 			Topic:                  writeTopic,
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
+			// Connection recovery settings
+			MaxAttempts:     maxWriteRetries,
+			WriteBackoffMin: 100 * time.Millisecond,
+			WriteBackoffMax: 1 * time.Second,
+			BatchTimeout:    100 * time.Millisecond,
+			RequiredAcks:    kafka.RequireOne,
 		}
 	} else {
 		// Create a writer without a fixed topic for dynamic topic mapping
@@ -56,6 +79,12 @@ func NewClient(broker string, readTopic string, writeTopic string, groupID strin
 			Addr:                   kafka.TCP(broker),
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
+			// Connection recovery settings
+			MaxAttempts:     maxWriteRetries,
+			WriteBackoffMin: 100 * time.Millisecond,
+			WriteBackoffMax: 1 * time.Second,
+			BatchTimeout:    100 * time.Millisecond,
+			RequiredAcks:    kafka.RequireOne,
 		}
 	}
 
@@ -64,17 +93,67 @@ func NewClient(broker string, readTopic string, writeTopic string, groupID strin
 		writer:       writer,
 		dynamicWrite: dynamicWrite,
 		broker:       broker,
+		readTopic:    readTopic,
+		groupID:      groupID,
 		logger:       logger,
 	}, nil
 }
 
-// ReadMessage reads a single message from Kafka
+// isTransientError checks if the error is a transient connection error that should be retried
+func isTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for network errors
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	// Check for connection refused errors
+	var opErr *net.OpError
+	return errors.As(err, &opErr)
+}
+
+// ReadMessage reads a single message from Kafka with automatic reconnection
 func (c *Client) ReadMessage(ctx context.Context) (*kafka.Message, error) {
-	msg, err := c.reader.ReadMessage(ctx)
-	if err != nil {
+	backoff := readRetryDelay
+
+	for {
+		msg, err := c.reader.ReadMessage(ctx)
+		if err == nil {
+			return &msg, nil
+		}
+
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("failed to read message: %w", ctx.Err())
+		}
+
+		// Check if it's a transient error that should be retried
+		if isTransientError(err) {
+			c.logger.Warn("Kafka read failed, will retry",
+				zap.Error(err),
+				zap.Duration("backoff", backoff),
+			)
+
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("failed to read message: %w", ctx.Err())
+			case <-time.After(backoff):
+			}
+
+			// Exponential backoff with cap
+			backoff = backoff * 2
+			if backoff > maxRetryBackoff {
+				backoff = maxRetryBackoff
+			}
+			continue
+		}
+
 		return nil, fmt.Errorf("failed to read message: %w", err)
 	}
-	return &msg, nil
 }
 
 // WriteMessage writes a single message to Kafka with retry logic for transient errors
@@ -83,8 +162,11 @@ func (c *Client) WriteMessage(ctx context.Context, key []byte, value []byte) err
 }
 
 // WriteMessageToTopic writes a single message to a specific Kafka topic with retry logic
+// and exponential backoff for connection recovery
 func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []byte, value []byte) error {
 	var lastErr error
+	backoff := retryBackoff
+
 	for i := 0; i < maxWriteRetries; i++ {
 		msg := kafka.Message{
 			Key:   key,
@@ -94,7 +176,7 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 		if topic != "" {
 			msg.Topic = topic
 		}
-		
+
 		err := c.writer.WriteMessages(ctx, msg)
 		if err == nil {
 			return nil
@@ -107,16 +189,23 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 		}
 
 		// Log retry attempt
-		c.logger.Debug("Retrying Kafka write",
+		c.logger.Warn("Kafka write failed, retrying",
 			zap.Int("attempt", i+1),
 			zap.Int("maxRetries", maxWriteRetries),
+			zap.Duration("backoff", backoff),
 			zap.Error(err))
 
-		// Wait before retrying
+		// Wait before retrying with exponential backoff
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("failed to write message: %w", ctx.Err())
-		case <-time.After(retryBackoff):
+		case <-time.After(backoff):
+		}
+
+		// Exponential backoff with cap
+		backoff = backoff * 2
+		if backoff > maxRetryBackoff {
+			backoff = maxRetryBackoff
 		}
 	}
 	return fmt.Errorf("failed to write message after %d retries: %w", maxWriteRetries, lastErr)

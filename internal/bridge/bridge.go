@@ -16,11 +16,11 @@ import (
 
 // Bridge manages the connection between Kafka and MQTT
 type Bridge struct {
-	kafkaClient     *kafka.Client
-	mqttClient      *mqtt.Client
-	config          *config.Config
-	logger          *zap.Logger
-	done            chan struct{}
+	kafkaClient       *kafka.Client
+	mqttClient        *mqtt.Client
+	config            *config.Config
+	logger            *zap.Logger
+	done              chan struct{}
 	mqttToKafkaMapper *topicmapper.Mapper // Maps MQTT topics to Kafka topics
 	kafkaToMQTTMapper *topicmapper.Mapper // Maps Kafka topics to MQTT topics
 }
@@ -102,7 +102,7 @@ func (b *Bridge) Start(ctx context.Context) error {
 	hasKafkaSource := b.config.Kafka.SourceTopic != ""
 	hasMQTTMappings := b.kafkaToMQTTMapper != nil && b.kafkaToMQTTMapper.HasMappings()
 	kafkaToMQTTEnabled := hasKafkaSource && (b.config.MQTT.DestTopic != "" || hasMQTTMappings)
-	
+
 	if kafkaToMQTTEnabled {
 		wg.Add(1)
 		go func() {
@@ -123,7 +123,7 @@ func (b *Bridge) Start(ctx context.Context) error {
 	// Start MQTT→Kafka bridging if configured
 	hasKafkaMappings := b.mqttToKafkaMapper != nil && b.mqttToKafkaMapper.HasMappings()
 	mqttToKafkaEnabled := (b.config.MQTT.SourceTopic != "" && b.config.Kafka.DestTopic != "") || hasKafkaMappings
-	
+
 	if mqttToKafkaEnabled {
 		if err := b.startMQTTToKafka(ctx); err != nil {
 			return fmt.Errorf("failed to start MQTT→Kafka bridge: %w", err)
