@@ -8,12 +8,24 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/segmentio/kafka-go"
 )
+
+// getProjectRoot returns the absolute path to the project root directory.
+// It works by finding the directory containing go.mod relative to this test file.
+func getProjectRoot() string {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("failed to get current file path")
+	}
+	// Navigate from test/integration/ to project root (../../)
+	return filepath.Join(filepath.Dir(filename), "..", "..")
+}
 
 // TestDynamicTopicMappingWithBinary tests dynamic topic mapping using the built binary
 // and a config file. This test:
@@ -71,7 +83,7 @@ bridge:
 	// Build the bridge binary
 	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
 	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
-	buildCmd.Dir = "/home/runner/work/kafka-mqtt-bridge/kafka-mqtt-bridge"
+	buildCmd.Dir = getProjectRoot()
 	if output, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
 	}
@@ -210,7 +222,7 @@ bridge:
 	// Build the bridge binary
 	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
 	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
-	buildCmd.Dir = "/home/runner/work/kafka-mqtt-bridge/kafka-mqtt-bridge"
+	buildCmd.Dir = getProjectRoot()
 	if output, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
 	}
@@ -352,7 +364,7 @@ bridge:
 	// Build the bridge binary
 	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
 	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
-	buildCmd.Dir = "/home/runner/work/kafka-mqtt-bridge/kafka-mqtt-bridge"
+	buildCmd.Dir = getProjectRoot()
 	if output, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
 	}
