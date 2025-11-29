@@ -14,23 +14,40 @@ type Config struct {
 	Bridge BridgeConfig `yaml:"bridge"`
 }
 
+// TopicMapping defines a mapping from a source topic pattern to a target topic template
+// Source patterns support wildcards:
+//   - For MQTT sources: + (single level) and # (multi-level)
+//   - For Kafka sources: * (matches any segment)
+//
+// Target templates can reference captured segments using {1}, {2}, etc.
+// Example: source="sensors/+/data" target="kafka/sensors/{1}" would map
+// "sensors/temp/data" to "kafka/sensors/temp"
+type TopicMapping struct {
+	Source string `yaml:"source"` // Source topic pattern with wildcards
+	Target string `yaml:"target"` // Target topic template with {1}, {2}, etc.
+}
+
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
-	Brokers     []string `yaml:"brokers"`
-	SourceTopic string   `yaml:"source_topic"` // Topic to read from (for Kafka→MQTT)
-	DestTopic   string   `yaml:"dest_topic"`   // Topic to write to (for MQTT→Kafka)
-	GroupID     string   `yaml:"group_id"`
+	Brokers       []string       `yaml:"brokers"`
+	SourceTopic   string         `yaml:"source_topic"`   // Topic to read from (for Kafka→MQTT) - deprecated, use topic_mappings
+	SourceTopics  []string       `yaml:"source_topics"`  // Multiple topics to read from (for Kafka→MQTT)
+	DestTopic     string         `yaml:"dest_topic"`     // Topic to write to (for MQTT→Kafka) - deprecated, use topic_mappings
+	TopicMappings []TopicMapping `yaml:"topic_mappings"` // Dynamic topic mappings for MQTT→Kafka
+	GroupID       string         `yaml:"group_id"`
 }
 
 // MQTTConfig contains MQTT connection settings
 type MQTTConfig struct {
-	Broker      string `yaml:"broker"`
-	Port        int    `yaml:"port"`
-	Username    string `yaml:"username"`
-	Password    string `yaml:"password"`
-	SourceTopic string `yaml:"source_topic"` // Topic to subscribe to (for MQTT→Kafka)
-	DestTopic   string `yaml:"dest_topic"`   // Topic to publish to (for Kafka→MQTT)
-	ClientID    string `yaml:"client_id"`
+	Broker        string         `yaml:"broker"`
+	Port          int            `yaml:"port"`
+	Username      string         `yaml:"username"`
+	Password      string         `yaml:"password"`
+	SourceTopic   string         `yaml:"source_topic"`   // Topic to subscribe to (for MQTT→Kafka) - deprecated, use topic_mappings
+	SourceTopics  []string       `yaml:"source_topics"`  // Multiple topics to subscribe to (for MQTT→Kafka)
+	DestTopic     string         `yaml:"dest_topic"`     // Topic to publish to (for Kafka→MQTT) - deprecated, use topic_mappings
+	TopicMappings []TopicMapping `yaml:"topic_mappings"` // Dynamic topic mappings for Kafka→MQTT
+	ClientID      string         `yaml:"client_id"`
 }
 
 // BridgeConfig contains bridge-specific settings
