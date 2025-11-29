@@ -3,6 +3,9 @@ package bridge
 import (
 	"context"
 	"fmt"
+	"sync"
+
+	pahomqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/csett86/kafka-mqtt-bridge/internal/kafka"
 	"github.com/csett86/kafka-mqtt-bridge/internal/mqtt"
@@ -21,10 +24,11 @@ type Bridge struct {
 
 // New creates a new Bridge instance
 func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
-	// Initialize Kafka client
+	// Initialize Kafka client with separate read/write topics
 	kafkaClient, err := kafka.NewClient(
 		cfg.Kafka.Brokers,
-		cfg.Kafka.Topic,
+		cfg.Kafka.SourceTopic,
+		cfg.Kafka.DestTopic,
 		cfg.Kafka.GroupID,
 		logger,
 	)
@@ -59,23 +63,62 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 func (b *Bridge) Start(ctx context.Context) error {
 	b.logger.Info("Starting bridge", zap.String("name", b.config.Bridge.Name))
 
-	// Message processing loop
+	var wg sync.WaitGroup
+
+	// Start Kafka→MQTT bridging if source topic is configured
+	if b.config.Kafka.SourceTopic != "" && b.config.MQTT.DestTopic != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			b.runKafkaToMQTT(ctx)
+		}()
+		b.logger.Info("Started Kafka→MQTT bridge",
+			zap.String("kafkaTopic", b.config.Kafka.SourceTopic),
+			zap.String("mqttTopic", b.config.MQTT.DestTopic))
+	}
+
+	// Start MQTT→Kafka bridging if source topic is configured
+	if b.config.MQTT.SourceTopic != "" && b.config.Kafka.DestTopic != "" {
+		if err := b.startMQTTToKafka(ctx); err != nil {
+			return fmt.Errorf("failed to start MQTT→Kafka bridge: %w", err)
+		}
+		b.logger.Info("Started MQTT→Kafka bridge",
+			zap.String("mqttTopic", b.config.MQTT.SourceTopic),
+			zap.String("kafkaTopic", b.config.Kafka.DestTopic))
+	}
+
+	// Wait for context cancellation or done signal
+	select {
+	case <-ctx.Done():
+	case <-b.done:
+	}
+
+	wg.Wait()
+	return nil
+}
+
+// runKafkaToMQTT handles the Kafka→MQTT message bridging
+func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-b.done:
-			return nil
+			return
 		default:
 			// Read from Kafka
 			msg, err := b.kafkaClient.ReadMessage(ctx)
 			if err != nil {
+				// Check if context was cancelled
+				if ctx.Err() != nil {
+					return
+				}
 				b.logger.Error("Failed to read message from Kafka", zap.Error(err))
 				continue
 			}
 
 			// Publish to MQTT
-			if err := b.mqttClient.Publish(b.config.MQTT.Topic, msg.Value); err != nil {
+			if err := b.mqttClient.Publish(b.config.MQTT.DestTopic, msg.Value); err != nil {
 				b.logger.Error("Failed to publish message to MQTT", zap.Error(err))
 				continue
 			}
@@ -87,6 +130,29 @@ func (b *Bridge) Start(ctx context.Context) error {
 			)
 		}
 	}
+}
+
+// startMQTTToKafka sets up MQTT subscription and forwards messages to Kafka
+func (b *Bridge) startMQTTToKafka(ctx context.Context) error {
+	handler := func(client pahomqtt.Client, msg pahomqtt.Message) {
+		// Forward message to Kafka
+		if err := b.kafkaClient.WriteMessage(ctx, nil, msg.Payload()); err != nil {
+			b.logger.Error("Failed to write message to Kafka", zap.Error(err))
+			return
+		}
+
+		b.logger.Debug("Message bridged",
+			zap.String("from", "mqtt"),
+			zap.String("to", "kafka"),
+			zap.Int("size", len(msg.Payload())),
+		)
+	}
+
+	if err := b.mqttClient.Subscribe(b.config.MQTT.SourceTopic, handler); err != nil {
+		return fmt.Errorf("failed to subscribe to MQTT topic: %w", err)
+	}
+
+	return nil
 }
 
 // Stop gracefully stops the bridge

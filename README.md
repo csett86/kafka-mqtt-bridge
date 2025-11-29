@@ -49,7 +49,10 @@ Edit the configuration file with your Kafka and MQTT settings:
 kafka:
   brokers:
     - "localhost:9092"
-  topic: "events"
+  # Topic to read from for Kafka→MQTT bridging
+  source_topic: "events"
+  # Topic to write to for MQTT→Kafka bridging
+  dest_topic: "mqtt-to-kafka"
   group_id: "kafka-mqtt-bridge"
 
 mqtt:
@@ -57,7 +60,10 @@ mqtt:
   port: 1883
   username: ""
   password: ""
-  topic: "mqtt/events"
+  # Topic to subscribe to for MQTT→Kafka bridging
+  source_topic: "mqtt/events"
+  # Topic to publish to for Kafka→MQTT bridging
+  dest_topic: "kafka/events"
   client_id: "kafka-mqtt-bridge"
 
 bridge:

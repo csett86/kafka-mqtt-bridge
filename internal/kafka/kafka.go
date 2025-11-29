@@ -15,22 +15,28 @@ type Client struct {
 	logger *zap.Logger
 }
 
-// NewClient creates a new Kafka client
-func NewClient(brokers []string, topic string, groupID string, logger *zap.Logger) (*Client, error) {
+// NewClient creates a new Kafka client with separate read and write topics
+func NewClient(brokers []string, readTopic string, writeTopic string, groupID string, logger *zap.Logger) (*Client, error) {
 	if len(brokers) == 0 {
 		return nil, fmt.Errorf("no kafka brokers provided")
 	}
 
-	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: brokers,
-		Topic:   topic,
-		GroupID: groupID,
-	})
+	var reader *kafka.Reader
+	if readTopic != "" {
+		reader = kafka.NewReader(kafka.ReaderConfig{
+			Brokers: brokers,
+			Topic:   readTopic,
+			GroupID: groupID,
+		})
+	}
 
-	writer := &kafka.Writer{
-		Addr:     kafka.TCP(brokers...),
-		Topic:    topic,
-		Balancer: &kafka.LeastBytes{},
+	var writer *kafka.Writer
+	if writeTopic != "" {
+		writer = &kafka.Writer{
+			Addr:     kafka.TCP(brokers...),
+			Topic:    writeTopic,
+			Balancer: &kafka.LeastBytes{},
+		}
 	}
 
 	return &Client{
@@ -63,11 +69,15 @@ func (c *Client) WriteMessage(ctx context.Context, key []byte, value []byte) err
 
 // Close closes the Kafka client connections
 func (c *Client) Close() error {
-	if err := c.reader.Close(); err != nil {
-		c.logger.Error("Failed to close Kafka reader", zap.Error(err))
+	if c.reader != nil {
+		if err := c.reader.Close(); err != nil {
+			c.logger.Error("Failed to close Kafka reader", zap.Error(err))
+		}
 	}
-	if err := c.writer.Close(); err != nil {
-		c.logger.Error("Failed to close Kafka writer", zap.Error(err))
+	if c.writer != nil {
+		if err := c.writer.Close(); err != nil {
+			c.logger.Error("Failed to close Kafka writer", zap.Error(err))
+		}
 	}
 	return nil
 }
