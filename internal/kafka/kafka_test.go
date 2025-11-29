@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/csett86/kafka-mqtt-bridge/pkg/config"
@@ -63,7 +64,7 @@ func TestCreateSASLMechanism(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("createSASLMechanism() expected error containing %q, got nil", tt.errContains)
-				} else if tt.errContains != "" && !containsSubstring(err.Error(), tt.errContains) {
+				} else if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
 					t.Errorf("createSASLMechanism() error = %v, want error containing %q", err, tt.errContains)
 				}
 				return
@@ -216,17 +217,4 @@ func TestNewClientWithConfig(t *testing.T) {
 			client.Close()
 		})
 	}
-}
-
-func containsSubstring(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstringHelper(s, substr))
-}
-
-func containsSubstringHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

@@ -83,8 +83,9 @@ func createSASLMechanism(cfg config.SASLConfig) (sasl.Mechanism, error) {
 	}
 }
 
-// NewClient creates a new Kafka client with separate read and write topics
-// Deprecated: Use NewClientWithConfig for full configuration support
+// NewClient creates a new Kafka client with separate read and write topics.
+//
+// Deprecated: NewClient is deprecated. Use NewClientWithConfig for full configuration support.
 func NewClient(brokers []string, readTopic string, writeTopic string, groupID string, logger *zap.Logger) (*Client, error) {
 	return NewClientWithConfig(ClientConfig{
 		Brokers:    brokers,
@@ -121,6 +122,11 @@ func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
 	}
 
 	dynamicWrite := cfg.WriteTopic == ""
+	transport, err := createTransport(cfg.SASL, cfg.TLS)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kafka transport: %w", err)
+	}
+
 	var writer *kafka.Writer
 	if !dynamicWrite {
 		writer = &kafka.Writer{
@@ -128,7 +134,7 @@ func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
 			Topic:                  cfg.WriteTopic,
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
-			Transport:              createTransport(cfg.SASL, cfg.TLS),
+			Transport:              transport,
 		}
 	} else {
 		// Create a writer without a fixed topic for dynamic topic mapping
@@ -136,7 +142,7 @@ func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
 			Addr:                   kafka.TCP(cfg.Brokers...),
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
-			Transport:              createTransport(cfg.SASL, cfg.TLS),
+			Transport:              transport,
 		}
 	}
 
@@ -151,7 +157,7 @@ func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
 }
 
 // createTransport creates a Kafka transport with optional SASL and TLS configuration
-func createTransport(saslCfg config.SASLConfig, tlsCfg config.TLSConfig) *kafka.Transport {
+func createTransport(saslCfg config.SASLConfig, tlsCfg config.TLSConfig) (*kafka.Transport, error) {
 	transport := &kafka.Transport{}
 
 	// Configure TLS if enabled
@@ -164,12 +170,13 @@ func createTransport(saslCfg config.SASLConfig, tlsCfg config.TLSConfig) *kafka.
 	// Configure SASL authentication if enabled
 	if saslCfg.Enabled {
 		mechanism, err := createSASLMechanism(saslCfg)
-		if err == nil {
-			transport.SASL = mechanism
+		if err != nil {
+			return nil, err
 		}
+		transport.SASL = mechanism
 	}
 
-	return transport
+	return transport, nil
 }
 
 // ReadMessage reads a single message from Kafka
