@@ -2,8 +2,6 @@
 kafka:
   brokers:
     - "localhost:9092"
-  # Legacy single topic (deprecated, use source_topic/dest_topic instead)
-  topic: "events"
   # Topic to read from for Kafka→MQTT bridging
   source_topic: "events"
   # Topic to write to for MQTT→Kafka bridging
@@ -16,8 +14,6 @@ mqtt:
   port: 1883
   username: ""
   password: ""
-  # Legacy single topic (deprecated, use source_topic/dest_topic instead)
-  topic: "mqtt/events"
   # Topic to subscribe to for MQTT→Kafka bridging
   source_topic: "mqtt/events"
   # Topic to publish to for Kafka→MQTT bridging
