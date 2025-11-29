@@ -16,19 +16,21 @@ type Config struct {
 
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
-	Brokers []string `yaml:"brokers"`
-	Topic   string   `yaml:"topic"`
-	GroupID string   `yaml:"group_id"`
+	Brokers     []string `yaml:"brokers"`
+	SourceTopic string   `yaml:"source_topic"` // Topic to read from (for Kafka→MQTT)
+	DestTopic   string   `yaml:"dest_topic"`   // Topic to write to (for MQTT→Kafka)
+	GroupID     string   `yaml:"group_id"`
 }
 
 // MQTTConfig contains MQTT connection settings
 type MQTTConfig struct {
-	Broker   string `yaml:"broker"`
-	Port     int    `yaml:"port"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	Topic    string `yaml:"topic"`
-	ClientID string `yaml:"client_id"`
+	Broker      string `yaml:"broker"`
+	Port        int    `yaml:"port"`
+	Username    string `yaml:"username"`
+	Password    string `yaml:"password"`
+	SourceTopic string `yaml:"source_topic"` // Topic to subscribe to (for MQTT→Kafka)
+	DestTopic   string `yaml:"dest_topic"`   // Topic to publish to (for Kafka→MQTT)
+	ClientID    string `yaml:"client_id"`
 }
 
 // BridgeConfig contains bridge-specific settings
