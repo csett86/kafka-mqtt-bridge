@@ -3,9 +3,17 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 	"go.uber.org/zap"
+)
+
+const (
+	// maxWriteRetries is the maximum number of retries for transient write errors
+	maxWriteRetries = 10
+	// retryBackoff is the delay between retries
+	retryBackoff = 500 * time.Millisecond
 )
 
 // Client wraps the Kafka reader and writer
@@ -56,16 +64,38 @@ func (c *Client) ReadMessage(ctx context.Context) (*kafka.Message, error) {
 	return &msg, nil
 }
 
-// WriteMessage writes a single message to Kafka
+// WriteMessage writes a single message to Kafka with retry logic for transient errors
 func (c *Client) WriteMessage(ctx context.Context, key []byte, value []byte) error {
-	err := c.writer.WriteMessages(ctx, kafka.Message{
-		Key:   key,
-		Value: value,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to write message: %w", err)
+	var lastErr error
+	for i := 0; i < maxWriteRetries; i++ {
+		err := c.writer.WriteMessages(ctx, kafka.Message{
+			Key:   key,
+			Value: value,
+		})
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return fmt.Errorf("failed to write message: %w", ctx.Err())
+		}
+
+		// Log retry attempt
+		c.logger.Debug("Retrying Kafka write",
+			zap.Int("attempt", i+1),
+			zap.Int("maxRetries", maxWriteRetries),
+			zap.Error(err))
+
+		// Wait before retrying
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("failed to write message: %w", ctx.Err())
+		case <-time.After(retryBackoff):
+		}
 	}
-	return nil
+	return fmt.Errorf("failed to write message after %d retries: %w", maxWriteRetries, lastErr)
 }
 
 // Close closes the Kafka client connections
