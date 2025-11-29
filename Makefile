@@ -62,8 +62,26 @@ deps:
 integration-up:
 	@echo "Starting integration test infrastructure..."
 	@docker compose -f docker-compose.integration.yml up -d
-	@echo "Waiting for services to be ready..."
-	@sleep 30
+	@echo "Waiting for services to be healthy..."
+	@timeout=120; \
+	elapsed=0; \
+	while [ $$elapsed -lt $$timeout ]; do \
+		healthy=$$(docker compose -f docker-compose.integration.yml ps --format json | jq -r 'select(.Health == "healthy") | .Name' | wc -l); \
+		total=$$(docker compose -f docker-compose.integration.yml ps --format json | jq -r '.Name' | wc -l); \
+		echo "Healthy services: $$healthy/$$total"; \
+		if [ "$$healthy" -eq "$$total" ] && [ "$$total" -gt 0 ]; then \
+			echo "All services are healthy!"; \
+			break; \
+		fi; \
+		sleep 5; \
+		elapsed=$$((elapsed + 5)); \
+	done; \
+	if [ $$elapsed -ge $$timeout ]; then \
+		echo "Timeout waiting for services to be healthy"; \
+		docker compose -f docker-compose.integration.yml ps; \
+		docker compose -f docker-compose.integration.yml logs; \
+		exit 1; \
+	fi
 	@echo "Integration test infrastructure is ready"
 
 integration-down:

@@ -99,33 +99,19 @@ make test
 
 ### Running Integration Tests
 
-Integration tests require Docker and Docker Compose to run the Kafka and MQTT broker infrastructure.
+Integration tests require Docker and Docker Compose to run the Kafka and MQTT broker infrastructure. The `jq` utility is also required for health checking.
 
 ```bash
 # Run integration tests (starts/stops infrastructure automatically)
 make integration-test
 
 # Or manually control the infrastructure:
-make integration-up          # Start Kafka and MQTT brokers
+make integration-up          # Start Kafka and MQTT brokers and wait for health checks
 make integration-test-only   # Run tests (infrastructure must be running)
 make integration-down        # Stop and clean up infrastructure
 ```
 
-You can also run integration tests directly with Go:
-
-```bash
-# Start infrastructure
-docker compose -f docker-compose.integration.yml up -d
-
-# Wait for services to be ready (about 30 seconds)
-sleep 30
-
-# Run tests
-go test -v ./test/integration/...
-
-# Clean up
-docker compose -f docker-compose.integration.yml down -v
-```
+The `integration-up` target starts the Docker containers and waits for all services to become healthy before returning (up to 120 seconds timeout). This ensures reliable test execution.
 
 #### Integration Test Cases
 
