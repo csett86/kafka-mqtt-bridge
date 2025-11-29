@@ -18,7 +18,7 @@ func NewClient(broker string, port int, username string, password string, client
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", broker, port))
 	opts.SetClientID(clientID)
-	
+
 	if username != "" {
 		opts.SetUsername(username)
 		opts.SetPassword(password)
@@ -28,12 +28,12 @@ func NewClient(broker string, port int, username string, password string, client
 	opts.SetCleanSession(true)
 
 	mqttClient := mqtt.NewClient(opts)
-	
+
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		return nil, fmt.Errorf("failed to connect to MQTT broker: %w", token.Error())
 	}
 
-	logger.Info("Connected to MQTT broker", 
+	logger.Info("Connected to MQTT broker",
 		zap.String("broker", broker),
 		zap.Int("port", port),
 	)

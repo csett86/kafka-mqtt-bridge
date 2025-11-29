@@ -9,8 +9,8 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Kafka KafkaConfig `yaml:"kafka"`
-	MQTT  MQTTConfig  `yaml:"mqtt"`
+	Kafka  KafkaConfig  `yaml:"kafka"`
+	MQTT   MQTTConfig   `yaml:"mqtt"`
 	Bridge BridgeConfig `yaml:"bridge"`
 }
 

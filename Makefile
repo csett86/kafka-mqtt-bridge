@@ -1,4 +1,4 @@
-.PHONY: build test run clean fmt lint help
+.PHONY: build test run clean fmt lint help integration-test integration-up integration-down
 
 # Variables
 BINARY_NAME=kafka-mqtt-bridge
@@ -9,15 +9,18 @@ GOFLAGS=-v
 
 help:
 	@echo "Available targets:"
-	@echo "  build       - Build the application"
-	@echo "  run         - Run the application"
-	@echo "  test        - Run tests"
-	@echo "  clean       - Clean build artifacts"
-	@echo "  fmt         - Format code"
-	@echo "  lint        - Run linter"
-	@echo "  deps        - Download and verify dependencies"
-	@echo "  docker-build - Build Docker image"
-	@echo "  docker-run  - Run Docker container"
+	@echo "  build            - Build the application"
+	@echo "  run              - Run the application"
+	@echo "  test             - Run unit tests"
+	@echo "  integration-test - Run integration tests (requires Docker)"
+	@echo "  integration-up   - Start integration test infrastructure"
+	@echo "  integration-down - Stop integration test infrastructure"
+	@echo "  clean            - Clean build artifacts"
+	@echo "  fmt              - Format code"
+	@echo "  lint             - Run linter"
+	@echo "  deps             - Download and verify dependencies"
+	@echo "  docker-build     - Build Docker image"
+	@echo "  docker-run       - Run Docker container"
 
 build:
 	@echo "Building $(BINARY_NAME)..."
@@ -75,3 +78,26 @@ docker-stop:
 	@docker stop $(BINARY_NAME)
 	@docker rm $(BINARY_NAME)
 	@echo "Container stopped"
+
+# Integration test targets
+integration-up:
+	@echo "Starting integration test infrastructure..."
+	@docker compose -f docker-compose.integration.yml up -d
+	@echo "Waiting for services to be ready..."
+	@sleep 30
+	@echo "Integration test infrastructure is ready"
+
+integration-down:
+	@echo "Stopping integration test infrastructure..."
+	@docker compose -f docker-compose.integration.yml down -v
+	@echo "Integration test infrastructure stopped"
+
+integration-test: integration-up
+	@echo "Running integration tests..."
+	@$(GO) test -v -race -timeout 5m ./test/integration/... || (make integration-down && exit 1)
+	@make integration-down
+	@echo "Integration tests complete"
+
+integration-test-only:
+	@echo "Running integration tests (infrastructure must be running)..."
+	@$(GO) test -v -race -timeout 5m ./test/integration/...
