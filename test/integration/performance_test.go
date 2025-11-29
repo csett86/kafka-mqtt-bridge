@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -475,15 +476,13 @@ func setupMQTTSubscriberWithCounter(t *testing.T, topic string, count *int, targ
 		t.Fatalf("Failed to connect MQTT subscriber: %v", token.Error())
 	}
 
+	var closeOnce sync.Once
 	token = client.Subscribe(topic, 1, func(c mqtt.Client, m mqtt.Message) {
 		*count++
 		if *count >= target {
-			select {
-			case <-done:
-				// Already closed
-			default:
+			closeOnce.Do(func() {
 				close(done)
-			}
+			})
 		}
 	})
 	if token.Wait() && token.Error() != nil {
@@ -507,16 +506,14 @@ func setupMQTTSubscriberWithSizeTracking(t *testing.T, topic string, count *int,
 		t.Fatalf("Failed to connect MQTT subscriber: %v", token.Error())
 	}
 
+	var closeOnce sync.Once
 	token = client.Subscribe(topic, 1, func(c mqtt.Client, m mqtt.Message) {
 		*sizes = append(*sizes, len(m.Payload()))
 		*count++
 		if *count >= target {
-			select {
-			case <-done:
-				// Already closed
-			default:
+			closeOnce.Do(func() {
 				close(done)
-			}
+			})
 		}
 	})
 	if token.Wait() && token.Error() != nil {
