@@ -1,7 +1,6 @@
 # Kafka Configuration
 kafka:
-  brokers:
-    - "localhost:9092"
+  broker: "localhost:9092"
   # Topic to read from for Kafka→MQTT bridging (static mode)
   source_topic: "events"
   # Topic to write to for MQTT→Kafka bridging (static mode)

@@ -47,8 +47,7 @@ func TestDynamicTopicMappingWithBinary(t *testing.T) {
 	configContent := fmt.Sprintf(`
 # Kafka Configuration
 kafka:
-  brokers:
-    - "localhost:9092"
+  broker: "localhost:9092"
   group_id: "test-dynamic-mapping-group"
   # Dynamic topic mappings for MQTT→Kafka bridging
   # The + wildcard matches exactly one topic level
@@ -187,8 +186,7 @@ func TestDynamicTopicMappingMultiLevel(t *testing.T) {
 	configContent := fmt.Sprintf(`
 # Kafka Configuration
 kafka:
-  brokers:
-    - "localhost:9092"
+  broker: "localhost:9092"
   group_id: "test-multilevel-group"
   # Dynamic topic mappings with multi-level wildcard
   # The # wildcard matches zero or more topic levels (including nested paths)
@@ -328,8 +326,7 @@ func TestDynamicTopicMappingKafkaToMQTT(t *testing.T) {
 	configContent := fmt.Sprintf(`
 # Kafka Configuration
 kafka:
-  brokers:
-    - "localhost:9092"
+  broker: "localhost:9092"
   # Source topic to read from Kafka
   source_topic: "kafka-source-%d"
   group_id: "test-k2m-dynamic-group"
