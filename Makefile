@@ -19,8 +19,6 @@ help:
 	@echo "  fmt              - Format code"
 	@echo "  lint             - Run linter"
 	@echo "  deps             - Download and verify dependencies"
-	@echo "  docker-build     - Build Docker image"
-	@echo "  docker-run       - Run Docker container"
 
 build:
 	@echo "Building $(BINARY_NAME)..."
@@ -59,25 +57,6 @@ deps:
 	@$(GO) mod download
 	@$(GO) mod verify
 	@echo "Dependencies downloaded and verified"
-
-docker-build:
-	@echo "Building Docker image..."
-	@docker build -t $(BINARY_NAME):latest .
-	@echo "Docker image built: $(BINARY_NAME):latest"
-
-docker-run:
-	@echo "Running Docker container..."
-	@docker run -d \
-		--name $(BINARY_NAME) \
-		-v $(PWD)/config:/app/config \
-		$(BINARY_NAME):latest
-	@echo "Container running: $(BINARY_NAME)"
-
-docker-stop:
-	@echo "Stopping Docker container..."
-	@docker stop $(BINARY_NAME)
-	@docker rm $(BINARY_NAME)
-	@echo "Container stopped"
 
 # Integration test targets
 integration-up:
