@@ -99,8 +99,9 @@ func (b *Bridge) Start(ctx context.Context) error {
 	var wg sync.WaitGroup
 
 	// Start Kafka→MQTT bridging if configured
-	kafkaToMQTTEnabled := (b.config.Kafka.SourceTopic != "" && b.config.MQTT.DestTopic != "") ||
-		(b.config.Kafka.SourceTopic != "" && b.kafkaToMQTTMapper != nil && b.kafkaToMQTTMapper.HasMappings())
+	hasKafkaSource := b.config.Kafka.SourceTopic != ""
+	hasMQTTMappings := b.kafkaToMQTTMapper != nil && b.kafkaToMQTTMapper.HasMappings()
+	kafkaToMQTTEnabled := hasKafkaSource && (b.config.MQTT.DestTopic != "" || hasMQTTMappings)
 	
 	if kafkaToMQTTEnabled {
 		wg.Add(1)
@@ -108,7 +109,7 @@ func (b *Bridge) Start(ctx context.Context) error {
 			defer wg.Done()
 			b.runKafkaToMQTT(ctx)
 		}()
-		if b.kafkaToMQTTMapper != nil && b.kafkaToMQTTMapper.HasMappings() {
+		if hasMQTTMappings {
 			b.logger.Info("Started Kafka→MQTT bridge with topic mappings",
 				zap.String("kafkaTopic", b.config.Kafka.SourceTopic),
 				zap.Int("mappings", len(b.config.MQTT.TopicMappings)))
@@ -120,14 +121,14 @@ func (b *Bridge) Start(ctx context.Context) error {
 	}
 
 	// Start MQTT→Kafka bridging if configured
-	mqttToKafkaEnabled := (b.config.MQTT.SourceTopic != "" && b.config.Kafka.DestTopic != "") ||
-		(b.mqttToKafkaMapper != nil && b.mqttToKafkaMapper.HasMappings())
+	hasKafkaMappings := b.mqttToKafkaMapper != nil && b.mqttToKafkaMapper.HasMappings()
+	mqttToKafkaEnabled := (b.config.MQTT.SourceTopic != "" && b.config.Kafka.DestTopic != "") || hasKafkaMappings
 	
 	if mqttToKafkaEnabled {
 		if err := b.startMQTTToKafka(ctx); err != nil {
 			return fmt.Errorf("failed to start MQTT→Kafka bridge: %w", err)
 		}
-		if b.mqttToKafkaMapper != nil && b.mqttToKafkaMapper.HasMappings() {
+		if hasKafkaMappings {
 			b.logger.Info("Started MQTT→Kafka bridge with topic mappings",
 				zap.Int("mappings", len(b.config.Kafka.TopicMappings)))
 		} else {

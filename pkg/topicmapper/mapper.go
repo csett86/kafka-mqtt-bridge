@@ -5,6 +5,7 @@ package topicmapper
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/csett86/kafka-mqtt-bridge/pkg/config"
@@ -104,7 +105,7 @@ func patternToRegex(pattern string) (*regexp.Regexp, error) {
 func applyTemplate(template string, captures []string) string {
 	result := template
 	for i, capture := range captures {
-		placeholder := "{" + string(rune('1'+i)) + "}"
+		placeholder := "{" + strconv.Itoa(i+1) + "}"
 		result = strings.ReplaceAll(result, placeholder, capture)
 	}
 	return result

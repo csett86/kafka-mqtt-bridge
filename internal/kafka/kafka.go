@@ -40,9 +40,9 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 		})
 	}
 
+	dynamicWrite := writeTopic == ""
 	var writer *kafka.Writer
-	dynamicWrite := false
-	if writeTopic != "" {
+	if !dynamicWrite {
 		writer = &kafka.Writer{
 			Addr:                   kafka.TCP(brokers...),
 			Topic:                  writeTopic,
@@ -56,7 +56,6 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
 		}
-		dynamicWrite = true
 	}
 
 	return &Client{
