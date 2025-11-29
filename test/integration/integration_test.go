@@ -393,9 +393,34 @@ func TestMQTTToKafkaBridge(t *testing.T) {
 	// Give bridge time to start and subscribe
 	time.Sleep(1 * time.Second)
 
+	// Pre-create the Kafka topic by writing a dummy message (triggers topic creation)
+	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
+	defer kafkaWriter.Close()
+	err = writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+		Key:   []byte("init"),
+		Value: []byte("init"),
+	}, 10)
+	if err != nil {
+		bridgeCancel()
+		<-bridgeDone
+		b.Stop()
+		t.Fatalf("Failed to pre-create Kafka topic: %v", err)
+	}
+
 	// Setup Kafka reader to consume messages forwarded by the bridge
 	kafkaReader := setupKafkaReader(t, kafkaTopic)
 	defer kafkaReader.Close()
+
+	// Consume the init message
+	initCtx, initCancel := context.WithTimeout(ctx, 10*time.Second)
+	_, err = kafkaReader.ReadMessage(initCtx)
+	initCancel()
+	if err != nil {
+		bridgeCancel()
+		<-bridgeDone
+		b.Stop()
+		t.Fatalf("Failed to consume init message: %v", err)
+	}
 
 	// Setup MQTT publisher to publish message
 	mqttPublisher := setupMQTTPublisher(t)

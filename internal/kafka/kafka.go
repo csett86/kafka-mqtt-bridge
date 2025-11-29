@@ -33,9 +33,10 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 	var writer *kafka.Writer
 	if writeTopic != "" {
 		writer = &kafka.Writer{
-			Addr:     kafka.TCP(brokers...),
-			Topic:    writeTopic,
-			Balancer: &kafka.LeastBytes{},
+			Addr:                   kafka.TCP(brokers...),
+			Topic:                  writeTopic,
+			Balancer:               &kafka.LeastBytes{},
+			AllowAutoTopicCreation: true,
 		}
 	}
 
