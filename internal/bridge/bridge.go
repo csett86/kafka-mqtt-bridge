@@ -10,25 +10,35 @@ import (
 	"github.com/csett86/kafka-mqtt-bridge/internal/kafka"
 	"github.com/csett86/kafka-mqtt-bridge/internal/mqtt"
 	"github.com/csett86/kafka-mqtt-bridge/pkg/config"
+	"github.com/csett86/kafka-mqtt-bridge/pkg/topicmapper"
 	"go.uber.org/zap"
 )
 
 // Bridge manages the connection between Kafka and MQTT
 type Bridge struct {
-	kafkaClient *kafka.Client
-	mqttClient  *mqtt.Client
-	config      *config.Config
-	logger      *zap.Logger
-	done        chan struct{}
+	kafkaClient     *kafka.Client
+	mqttClient      *mqtt.Client
+	config          *config.Config
+	logger          *zap.Logger
+	done            chan struct{}
+	mqttToKafkaMapper *topicmapper.Mapper // Maps MQTT topics to Kafka topics
+	kafkaToMQTTMapper *topicmapper.Mapper // Maps Kafka topics to MQTT topics
 }
 
 // New creates a new Bridge instance
 func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
+	// Determine if we need dynamic topic writing for Kafka
+	// If topic_mappings are configured, we use dynamic topics
+	kafkaDestTopic := cfg.Kafka.DestTopic
+	if len(cfg.Kafka.TopicMappings) > 0 {
+		kafkaDestTopic = "" // Use dynamic topic writing
+	}
+
 	// Initialize Kafka client with separate read/write topics
 	kafkaClient, err := kafka.NewClient(
 		cfg.Kafka.Brokers,
 		cfg.Kafka.SourceTopic,
-		cfg.Kafka.DestTopic,
+		kafkaDestTopic,
 		cfg.Kafka.GroupID,
 		logger,
 	)
@@ -50,12 +60,35 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 		return nil, fmt.Errorf("failed to create MQTT client: %w", err)
 	}
 
+	// Create topic mappers
+	var mqttToKafkaMapper *topicmapper.Mapper
+	if len(cfg.Kafka.TopicMappings) > 0 {
+		mqttToKafkaMapper, err = topicmapper.New(cfg.Kafka.TopicMappings)
+		if err != nil {
+			kafkaClient.Close()
+			mqttClient.Disconnect()
+			return nil, fmt.Errorf("failed to create MQTT→Kafka topic mapper: %w", err)
+		}
+	}
+
+	var kafkaToMQTTMapper *topicmapper.Mapper
+	if len(cfg.MQTT.TopicMappings) > 0 {
+		kafkaToMQTTMapper, err = topicmapper.New(cfg.MQTT.TopicMappings)
+		if err != nil {
+			kafkaClient.Close()
+			mqttClient.Disconnect()
+			return nil, fmt.Errorf("failed to create Kafka→MQTT topic mapper: %w", err)
+		}
+	}
+
 	return &Bridge{
-		kafkaClient: kafkaClient,
-		mqttClient:  mqttClient,
-		config:      cfg,
-		logger:      logger,
-		done:        make(chan struct{}),
+		kafkaClient:       kafkaClient,
+		mqttClient:        mqttClient,
+		config:            cfg,
+		logger:            logger,
+		done:              make(chan struct{}),
+		mqttToKafkaMapper: mqttToKafkaMapper,
+		kafkaToMQTTMapper: kafkaToMQTTMapper,
 	}, nil
 }
 
@@ -65,26 +98,43 @@ func (b *Bridge) Start(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 
-	// Start Kafka→MQTT bridging if source topic is configured
-	if b.config.Kafka.SourceTopic != "" && b.config.MQTT.DestTopic != "" {
+	// Start Kafka→MQTT bridging if configured
+	kafkaToMQTTEnabled := (b.config.Kafka.SourceTopic != "" && b.config.MQTT.DestTopic != "") ||
+		(b.config.Kafka.SourceTopic != "" && b.kafkaToMQTTMapper != nil && b.kafkaToMQTTMapper.HasMappings())
+	
+	if kafkaToMQTTEnabled {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			b.runKafkaToMQTT(ctx)
 		}()
-		b.logger.Info("Started Kafka→MQTT bridge",
-			zap.String("kafkaTopic", b.config.Kafka.SourceTopic),
-			zap.String("mqttTopic", b.config.MQTT.DestTopic))
+		if b.kafkaToMQTTMapper != nil && b.kafkaToMQTTMapper.HasMappings() {
+			b.logger.Info("Started Kafka→MQTT bridge with topic mappings",
+				zap.String("kafkaTopic", b.config.Kafka.SourceTopic),
+				zap.Int("mappings", len(b.config.MQTT.TopicMappings)))
+		} else {
+			b.logger.Info("Started Kafka→MQTT bridge",
+				zap.String("kafkaTopic", b.config.Kafka.SourceTopic),
+				zap.String("mqttTopic", b.config.MQTT.DestTopic))
+		}
 	}
 
-	// Start MQTT→Kafka bridging if source topic is configured
-	if b.config.MQTT.SourceTopic != "" && b.config.Kafka.DestTopic != "" {
+	// Start MQTT→Kafka bridging if configured
+	mqttToKafkaEnabled := (b.config.MQTT.SourceTopic != "" && b.config.Kafka.DestTopic != "") ||
+		(b.mqttToKafkaMapper != nil && b.mqttToKafkaMapper.HasMappings())
+	
+	if mqttToKafkaEnabled {
 		if err := b.startMQTTToKafka(ctx); err != nil {
 			return fmt.Errorf("failed to start MQTT→Kafka bridge: %w", err)
 		}
-		b.logger.Info("Started MQTT→Kafka bridge",
-			zap.String("mqttTopic", b.config.MQTT.SourceTopic),
-			zap.String("kafkaTopic", b.config.Kafka.DestTopic))
+		if b.mqttToKafkaMapper != nil && b.mqttToKafkaMapper.HasMappings() {
+			b.logger.Info("Started MQTT→Kafka bridge with topic mappings",
+				zap.Int("mappings", len(b.config.Kafka.TopicMappings)))
+		} else {
+			b.logger.Info("Started MQTT→Kafka bridge",
+				zap.String("mqttTopic", b.config.MQTT.SourceTopic),
+				zap.String("kafkaTopic", b.config.Kafka.DestTopic))
+		}
 	}
 
 	// Wait for context cancellation or done signal
@@ -117,15 +167,31 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 				continue
 			}
 
+			// Determine the target MQTT topic
+			var mqttTopic string
+			if b.kafkaToMQTTMapper != nil && b.kafkaToMQTTMapper.HasMappings() {
+				// Use topic mapper to determine target topic
+				mqttTopic = b.kafkaToMQTTMapper.Map(msg.Topic)
+				if mqttTopic == "" {
+					b.logger.Warn("No matching topic mapping for Kafka topic",
+						zap.String("kafkaTopic", msg.Topic))
+					continue
+				}
+			} else {
+				// Use static destination topic
+				mqttTopic = b.config.MQTT.DestTopic
+			}
+
 			// Publish to MQTT
-			if err := b.mqttClient.Publish(b.config.MQTT.DestTopic, msg.Value); err != nil {
+			if err := b.mqttClient.Publish(mqttTopic, msg.Value); err != nil {
 				b.logger.Error("Failed to publish message to MQTT", zap.Error(err))
 				continue
 			}
 
 			b.logger.Debug("Message bridged",
 				zap.String("from", "kafka"),
-				zap.String("to", "mqtt"),
+				zap.String("kafkaTopic", msg.Topic),
+				zap.String("mqttTopic", mqttTopic),
 				zap.Int("size", len(msg.Value)),
 			)
 		}
@@ -135,21 +201,52 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 // startMQTTToKafka sets up MQTT subscription and forwards messages to Kafka
 func (b *Bridge) startMQTTToKafka(ctx context.Context) error {
 	handler := func(client pahomqtt.Client, msg pahomqtt.Message) {
-		// Forward message to Kafka
-		if err := b.kafkaClient.WriteMessage(ctx, nil, msg.Payload()); err != nil {
-			b.logger.Error("Failed to write message to Kafka", zap.Error(err))
-			return
+		// Determine the target Kafka topic
+		var kafkaTopic string
+		if b.mqttToKafkaMapper != nil && b.mqttToKafkaMapper.HasMappings() {
+			// Use topic mapper to determine target topic
+			kafkaTopic = b.mqttToKafkaMapper.Map(msg.Topic())
+			if kafkaTopic == "" {
+				b.logger.Warn("No matching topic mapping for MQTT topic",
+					zap.String("mqttTopic", msg.Topic()))
+				return
+			}
+			// Write to the dynamically determined Kafka topic
+			if err := b.kafkaClient.WriteMessageToTopic(ctx, kafkaTopic, nil, msg.Payload()); err != nil {
+				b.logger.Error("Failed to write message to Kafka", zap.Error(err))
+				return
+			}
+		} else {
+			kafkaTopic = b.config.Kafka.DestTopic
+			// Write to the static destination topic
+			if err := b.kafkaClient.WriteMessage(ctx, nil, msg.Payload()); err != nil {
+				b.logger.Error("Failed to write message to Kafka", zap.Error(err))
+				return
+			}
 		}
 
 		b.logger.Debug("Message bridged",
 			zap.String("from", "mqtt"),
-			zap.String("to", "kafka"),
+			zap.String("mqttTopic", msg.Topic()),
+			zap.String("kafkaTopic", kafkaTopic),
 			zap.Int("size", len(msg.Payload())),
 		)
 	}
 
-	if err := b.mqttClient.Subscribe(b.config.MQTT.SourceTopic, handler); err != nil {
-		return fmt.Errorf("failed to subscribe to MQTT topic: %w", err)
+	// Subscribe to topics based on configuration
+	if b.mqttToKafkaMapper != nil && b.mqttToKafkaMapper.HasMappings() {
+		// Subscribe to all source patterns from topic mappings
+		for _, pattern := range b.mqttToKafkaMapper.GetSubscriptionPatterns() {
+			if err := b.mqttClient.Subscribe(pattern, handler); err != nil {
+				return fmt.Errorf("failed to subscribe to MQTT topic pattern %s: %w", pattern, err)
+			}
+			b.logger.Debug("Subscribed to MQTT topic pattern", zap.String("pattern", pattern))
+		}
+	} else if b.config.MQTT.SourceTopic != "" {
+		// Subscribe to static source topic
+		if err := b.mqttClient.Subscribe(b.config.MQTT.SourceTopic, handler); err != nil {
+			return fmt.Errorf("failed to subscribe to MQTT topic: %w", err)
+		}
 	}
 
 	return nil

@@ -18,9 +18,11 @@ const (
 
 // Client wraps the Kafka reader and writer
 type Client struct {
-	reader *kafka.Reader
-	writer *kafka.Writer
-	logger *zap.Logger
+	reader       *kafka.Reader
+	writer       *kafka.Writer
+	dynamicWrite bool // If true, topic is specified per message
+	brokers      []string
+	logger       *zap.Logger
 }
 
 // NewClient creates a new Kafka client with separate read and write topics
@@ -39,6 +41,7 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 	}
 
 	var writer *kafka.Writer
+	dynamicWrite := false
 	if writeTopic != "" {
 		writer = &kafka.Writer{
 			Addr:                   kafka.TCP(brokers...),
@@ -46,12 +49,22 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
 		}
+	} else {
+		// Create a writer without a fixed topic for dynamic topic mapping
+		writer = &kafka.Writer{
+			Addr:                   kafka.TCP(brokers...),
+			Balancer:               &kafka.LeastBytes{},
+			AllowAutoTopicCreation: true,
+		}
+		dynamicWrite = true
 	}
 
 	return &Client{
-		reader: reader,
-		writer: writer,
-		logger: logger,
+		reader:       reader,
+		writer:       writer,
+		dynamicWrite: dynamicWrite,
+		brokers:      brokers,
+		logger:       logger,
 	}, nil
 }
 
@@ -66,12 +79,23 @@ func (c *Client) ReadMessage(ctx context.Context) (*kafka.Message, error) {
 
 // WriteMessage writes a single message to Kafka with retry logic for transient errors
 func (c *Client) WriteMessage(ctx context.Context, key []byte, value []byte) error {
+	return c.WriteMessageToTopic(ctx, "", key, value)
+}
+
+// WriteMessageToTopic writes a single message to a specific Kafka topic with retry logic
+func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []byte, value []byte) error {
 	var lastErr error
 	for i := 0; i < maxWriteRetries; i++ {
-		err := c.writer.WriteMessages(ctx, kafka.Message{
+		msg := kafka.Message{
 			Key:   key,
 			Value: value,
-		})
+		}
+		// Only set topic if specified (for dynamic topic mapping)
+		if topic != "" {
+			msg.Topic = topic
+		}
+		
+		err := c.writer.WriteMessages(ctx, msg)
 		if err == nil {
 			return nil
 		}
