@@ -34,9 +34,10 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 	var reader *kafka.Reader
 	if readTopic != "" {
 		reader = kafka.NewReader(kafka.ReaderConfig{
-			Brokers: brokers,
-			Topic:   readTopic,
-			GroupID: groupID,
+			Brokers:     brokers,
+			Topic:       readTopic,
+			GroupID:     groupID,
+			StartOffset: kafka.FirstOffset, // Start from beginning for new consumer groups
 		})
 	}
 

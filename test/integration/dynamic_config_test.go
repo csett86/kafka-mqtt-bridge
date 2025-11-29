@@ -27,29 +27,36 @@ func TestDynamicTopicMappingWithBinary(t *testing.T) {
 
 	// Create unique topic names for this test
 	testID := time.Now().UnixNano()
-	mqttSourcePattern := fmt.Sprintf("sensors/+/data-%d", testID)
-	kafkaDestPattern := fmt.Sprintf("kafka-sensors-{1}-%d", testID)
 
 	// Create a temporary config file with dynamic topic mappings
+	// The config uses:
+	// - MQTT wildcard pattern: sensors/+/data-{testID} where + matches any single level (e.g., "temperature", "humidity")
+	// - Kafka target template: kafka-sensors-{1}-{testID} where {1} is replaced with the captured wildcard value
 	configContent := fmt.Sprintf(`
+# Kafka Configuration
 kafka:
   brokers:
-    - "%s"
-  group_id: "test-dynamic-mapping-%d"
+    - "localhost:9092"
+  group_id: "test-dynamic-mapping-group"
+  # Dynamic topic mappings for MQTT→Kafka bridging
+  # The + wildcard matches exactly one topic level
+  # {1} in target references the first captured wildcard segment
   topic_mappings:
-    - source: "%s"
-      target: "%s"
+    - source: "sensors/+/data-%d"
+      target: "kafka-sensors-{1}-%d"
 
+# MQTT Configuration
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-dynamic-bridge-%d"
+  broker: "localhost"
+  port: 1883
+  client_id: "test-dynamic-bridge-client"
 
+# Bridge Configuration
 bridge:
   name: "test-dynamic-bridge"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, testID, mqttSourcePattern, kafkaDestPattern, mqttBroker, mqttPort, testID)
+`, testID, testID)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -162,25 +169,34 @@ func TestDynamicTopicMappingMultiLevel(t *testing.T) {
 	testID := time.Now().UnixNano()
 
 	// Create a temporary config file with multi-level wildcard mapping
+	// The config uses:
+	// - MQTT wildcard pattern: devices/{testID}/# where # matches zero or more topic levels
+	// - Kafka target: kafka-devices-{testID} (all matching messages go to this single topic)
 	configContent := fmt.Sprintf(`
+# Kafka Configuration
 kafka:
   brokers:
-    - "%s"
-  group_id: "test-multilevel-%d"
+    - "localhost:9092"
+  group_id: "test-multilevel-group"
+  # Dynamic topic mappings with multi-level wildcard
+  # The # wildcard matches zero or more topic levels (including nested paths)
+  # All messages matching this pattern go to the same Kafka topic
   topic_mappings:
     - source: "devices/%d/#"
       target: "kafka-devices-%d"
 
+# MQTT Configuration
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-multilevel-bridge-%d"
+  broker: "localhost"
+  port: 1883
+  client_id: "test-multilevel-bridge-client"
 
+# Bridge Configuration
 bridge:
   name: "test-multilevel-bridge"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, testID, testID, testID, mqttBroker, mqttPort, testID)
+`, testID, testID)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -202,6 +218,8 @@ bridge:
 	// Start the bridge binary
 	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
 	bridgeCmd.Dir = tmpDir
+	bridgeCmd.Stdout = os.Stdout
+	bridgeCmd.Stderr = os.Stderr
 
 	if err := bridgeCmd.Start(); err != nil {
 		t.Fatalf("Failed to start bridge: %v", err)
@@ -292,26 +310,35 @@ func TestDynamicTopicMappingKafkaToMQTT(t *testing.T) {
 	kafkaSourceTopic := fmt.Sprintf("kafka-source-%d", testID)
 
 	// Create a temporary config file with Kafka→MQTT topic mappings
+	// The config uses:
+	// - Kafka source topic: kafka-source-{testID}
+	// - MQTT topic mapping: source matches the Kafka topic, target is mqtt/dynamic/{testID}/events
 	configContent := fmt.Sprintf(`
+# Kafka Configuration
 kafka:
   brokers:
-    - "%s"
-  source_topic: "%s"
-  group_id: "test-k2m-dynamic-%d"
+    - "localhost:9092"
+  # Source topic to read from Kafka
+  source_topic: "kafka-source-%d"
+  group_id: "test-k2m-dynamic-group"
 
+# MQTT Configuration
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-k2m-dynamic-bridge-%d"
+  broker: "localhost"
+  port: 1883
+  client_id: "test-k2m-dynamic-bridge-client"
+  # Dynamic topic mappings for Kafka→MQTT bridging
+  # Messages from the Kafka source topic are published to the MQTT target topic
   topic_mappings:
-    - source: "%s"
+    - source: "kafka-source-%d"
       target: "mqtt/dynamic/%d/events"
 
+# Bridge Configuration
 bridge:
   name: "test-k2m-dynamic-bridge"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, kafkaSourceTopic, testID, mqttBroker, mqttPort, testID, kafkaSourceTopic, testID)
+`, testID, testID, testID)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -339,9 +366,26 @@ bridge:
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
+	// Setup Kafka writer and publish message BEFORE starting bridge
+	// This ensures the message exists when the bridge starts reading
+	kafkaWriter := setupKafkaWriter(t, kafkaSourceTopic)
+	defer kafkaWriter.Close()
+
+	testMessage := fmt.Sprintf("kafka-to-mqtt-dynamic-%d", testID)
+	err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+		Key:   []byte("test-key"),
+		Value: []byte(testMessage),
+	}, 10)
+	if err != nil {
+		t.Fatalf("Failed to write message to Kafka: %v", err)
+	}
+	t.Logf("Published message to Kafka topic %s: %s", kafkaSourceTopic, testMessage)
+
 	// Start the bridge binary
 	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
 	bridgeCmd.Dir = tmpDir
+	bridgeCmd.Stdout = os.Stdout
+	bridgeCmd.Stderr = os.Stderr
 
 	if err := bridgeCmd.Start(); err != nil {
 		t.Fatalf("Failed to start bridge: %v", err)
@@ -354,24 +398,8 @@ bridge:
 		}
 	}()
 
-	// Give the bridge time to start
-	time.Sleep(3 * time.Second)
-
-	// Setup Kafka writer
-	kafkaWriter := setupKafkaWriter(t, kafkaSourceTopic)
-	defer kafkaWriter.Close()
-
-	// Publish message to Kafka
-	testMessage := fmt.Sprintf("kafka-to-mqtt-dynamic-%d", testID)
-	err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
-		Key:   []byte("test-key"),
-		Value: []byte(testMessage),
-	}, 10)
-	if err != nil {
-		t.Fatalf("Failed to write message to Kafka: %v", err)
-	}
-
-	t.Logf("Published message to Kafka topic %s: %s", kafkaSourceTopic, testMessage)
+	// Give the bridge time to start and process
+	time.Sleep(5 * time.Second)
 
 	// Wait for the message to appear on MQTT
 	select {
