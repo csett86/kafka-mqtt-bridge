@@ -6,6 +6,7 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers. Th
 
 - Bidirectional message bridging between Kafka and MQTT
 - **Dynamic topic mapping with wildcard support** for flexible routing
+- **Azure Event Hubs support** via SASL/PLAIN authentication and TLS
 - Configurable Kafka and MQTT connection settings
 - Graceful shutdown handling
 - Comprehensive logging with Zap
@@ -117,6 +118,51 @@ Use `{1}`, `{2}`, etc. to reference captured wildcard segments in the target top
 
 - `sensors/+/data` → `kafka/{1}` transforms `sensors/temp/data` to `kafka/temp`
 - `home/+/+/status` → `mqtt/{1}/{2}` transforms `home/floor1/room2/status` to `mqtt/floor1/room2`
+
+### Azure Event Hubs Configuration
+
+To connect to Azure Event Hubs (which uses the Kafka protocol), enable SASL authentication and TLS:
+
+```yaml
+kafka:
+  brokers:
+    - "your-namespace.servicebus.windows.net:9093"
+  source_topic: "your-event-hub-name"
+  dest_topic: "your-event-hub-name"
+  group_id: "$Default"
+  
+  # SASL authentication (required for Azure Event Hubs)
+  sasl:
+    enabled: true
+    mechanism: "PLAIN"
+    # For Azure Event Hubs, username must be exactly "$ConnectionString"
+    username: "$ConnectionString"
+    # Use your Event Hub connection string as the password
+    password: "Endpoint=sb://your-namespace.servicebus.windows.net/;SharedAccessKeyName=your-key-name;SharedAccessKey=your-key"
+  
+  # TLS encryption (required for Azure Event Hubs)
+  tls:
+    enabled: true
+
+mqtt:
+  broker: "localhost"
+  port: 1883
+  client_id: "kafka-mqtt-bridge"
+  dest_topic: "kafka/events"
+
+bridge:
+  name: "azure-event-hubs-bridge"
+  log_level: "info"
+  buffer_size: 100
+```
+
+#### Azure Event Hubs Notes
+
+- The broker address must use port `9093` (the Kafka-enabled endpoint)
+- The username must be literally `$ConnectionString` (with the dollar sign)
+- The password is your full Event Hub connection string
+- TLS must be enabled for Azure Event Hubs connections
+- The `group_id` can be `$Default` or a custom consumer group name
 
 ## Usage
 

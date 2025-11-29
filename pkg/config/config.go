@@ -27,6 +27,28 @@ type TopicMapping struct {
 	Target string `yaml:"target"` // Target topic template with {1}, {2}, etc.
 }
 
+// SASLConfig contains SASL authentication settings for Kafka
+// Used for Azure Event Hubs and other SASL-enabled Kafka clusters
+type SASLConfig struct {
+	// Enabled enables SASL authentication (default: false)
+	Enabled bool `yaml:"enabled"`
+	// Mechanism specifies the SASL mechanism (currently only "PLAIN" is supported)
+	Mechanism string `yaml:"mechanism"`
+	// Username for SASL authentication
+	// For Azure Event Hubs, use "$ConnectionString"
+	Username string `yaml:"username"`
+	// Password for SASL authentication
+	// For Azure Event Hubs, use the full connection string
+	Password string `yaml:"password"`
+}
+
+// TLSConfig contains TLS settings for Kafka connections
+type TLSConfig struct {
+	// Enabled enables TLS encryption (default: false)
+	// Required for Azure Event Hubs
+	Enabled bool `yaml:"enabled"`
+}
+
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
 	Brokers       []string       `yaml:"brokers"`
@@ -35,6 +57,8 @@ type KafkaConfig struct {
 	DestTopic     string         `yaml:"dest_topic"`     // Topic to write to (for MQTT→Kafka) - deprecated, use topic_mappings
 	TopicMappings []TopicMapping `yaml:"topic_mappings"` // Dynamic topic mappings for MQTT→Kafka
 	GroupID       string         `yaml:"group_id"`
+	SASL          SASLConfig     `yaml:"sasl"` // SASL authentication configuration
+	TLS           TLSConfig      `yaml:"tls"`  // TLS encryption configuration
 }
 
 // MQTTConfig contains MQTT connection settings

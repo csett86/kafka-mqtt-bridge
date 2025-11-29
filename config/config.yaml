@@ -17,6 +17,17 @@ kafka:
   #   - source: "devices/#"
   #     target: "kafka-devices"
 
+  # SASL authentication configuration (required for Azure Event Hubs)
+  # sasl:
+  #   enabled: true
+  #   mechanism: "PLAIN"  # Currently only PLAIN is supported
+  #   username: "$ConnectionString"  # For Azure Event Hubs, use literal "$ConnectionString"
+  #   password: "Endpoint=sb://your-namespace.servicebus.windows.net/;SharedAccessKeyName=your-key-name;SharedAccessKey=your-key"
+
+  # TLS configuration (required for Azure Event Hubs)
+  # tls:
+  #   enabled: true
+
 # MQTT Configuration
 mqtt:
   broker: "localhost"

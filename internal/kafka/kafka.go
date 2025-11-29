@@ -2,10 +2,15 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/csett86/kafka-mqtt-bridge/pkg/config"
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
+	"github.com/segmentio/kafka-go/sasl/plain"
 	"go.uber.org/zap"
 )
 
@@ -23,39 +28,115 @@ type Client struct {
 	dynamicWrite bool // If true, topic is specified per message
 	brokers      []string
 	logger       *zap.Logger
+	dialer       *kafka.Dialer
+}
+
+// ClientConfig holds configuration for creating a Kafka client
+type ClientConfig struct {
+	Brokers    []string
+	ReadTopic  string
+	WriteTopic string
+	GroupID    string
+	SASL       config.SASLConfig
+	TLS        config.TLSConfig
+	Logger     *zap.Logger
+}
+
+// createDialer creates a Kafka dialer with optional SASL and TLS configuration
+func createDialer(saslCfg config.SASLConfig, tlsCfg config.TLSConfig) (*kafka.Dialer, error) {
+	dialer := &kafka.Dialer{
+		Timeout:   10 * time.Second,
+		DualStack: true,
+	}
+
+	// Configure TLS if enabled
+	if tlsCfg.Enabled {
+		dialer.TLS = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+
+	// Configure SASL authentication if enabled
+	if saslCfg.Enabled {
+		mechanism, err := createSASLMechanism(saslCfg)
+		if err != nil {
+			return nil, err
+		}
+		dialer.SASLMechanism = mechanism
+	}
+
+	return dialer, nil
+}
+
+// createSASLMechanism creates the appropriate SASL mechanism based on configuration
+func createSASLMechanism(cfg config.SASLConfig) (sasl.Mechanism, error) {
+	mechanism := strings.ToUpper(cfg.Mechanism)
+	switch mechanism {
+	case "PLAIN", "":
+		// Default to PLAIN mechanism (used by Azure Event Hubs)
+		return plain.Mechanism{
+			Username: cfg.Username,
+			Password: cfg.Password,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported SASL mechanism: %s (supported: PLAIN)", cfg.Mechanism)
+	}
 }
 
 // NewClient creates a new Kafka client with separate read and write topics
+// Deprecated: Use NewClientWithConfig for full configuration support
 func NewClient(brokers []string, readTopic string, writeTopic string, groupID string, logger *zap.Logger) (*Client, error) {
-	if len(brokers) == 0 {
+	return NewClientWithConfig(ClientConfig{
+		Brokers:    brokers,
+		ReadTopic:  readTopic,
+		WriteTopic: writeTopic,
+		GroupID:    groupID,
+		Logger:     logger,
+	})
+}
+
+// NewClientWithConfig creates a new Kafka client with full configuration support
+// including SASL authentication and TLS encryption for Azure Event Hubs compatibility
+func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
+	if len(cfg.Brokers) == 0 {
 		return nil, fmt.Errorf("no kafka brokers provided")
 	}
 
-	var reader *kafka.Reader
-	if readTopic != "" {
-		reader = kafka.NewReader(kafka.ReaderConfig{
-			Brokers:     brokers,
-			Topic:       readTopic,
-			GroupID:     groupID,
-			StartOffset: kafka.FirstOffset, // Start from beginning for new consumer groups
-		})
+	// Create dialer with SASL/TLS configuration
+	dialer, err := createDialer(cfg.SASL, cfg.TLS)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kafka dialer: %w", err)
 	}
 
-	dynamicWrite := writeTopic == ""
+	var reader *kafka.Reader
+	if cfg.ReadTopic != "" {
+		readerConfig := kafka.ReaderConfig{
+			Brokers:     cfg.Brokers,
+			Topic:       cfg.ReadTopic,
+			GroupID:     cfg.GroupID,
+			StartOffset: kafka.FirstOffset, // Start from beginning for new consumer groups
+			Dialer:      dialer,
+		}
+		reader = kafka.NewReader(readerConfig)
+	}
+
+	dynamicWrite := cfg.WriteTopic == ""
 	var writer *kafka.Writer
 	if !dynamicWrite {
 		writer = &kafka.Writer{
-			Addr:                   kafka.TCP(brokers...),
-			Topic:                  writeTopic,
+			Addr:                   kafka.TCP(cfg.Brokers...),
+			Topic:                  cfg.WriteTopic,
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
+			Transport:              createTransport(cfg.SASL, cfg.TLS),
 		}
 	} else {
 		// Create a writer without a fixed topic for dynamic topic mapping
 		writer = &kafka.Writer{
-			Addr:                   kafka.TCP(brokers...),
+			Addr:                   kafka.TCP(cfg.Brokers...),
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
+			Transport:              createTransport(cfg.SASL, cfg.TLS),
 		}
 	}
 
@@ -63,9 +144,32 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 		reader:       reader,
 		writer:       writer,
 		dynamicWrite: dynamicWrite,
-		brokers:      brokers,
-		logger:       logger,
+		brokers:      cfg.Brokers,
+		logger:       cfg.Logger,
+		dialer:       dialer,
 	}, nil
+}
+
+// createTransport creates a Kafka transport with optional SASL and TLS configuration
+func createTransport(saslCfg config.SASLConfig, tlsCfg config.TLSConfig) *kafka.Transport {
+	transport := &kafka.Transport{}
+
+	// Configure TLS if enabled
+	if tlsCfg.Enabled {
+		transport.TLS = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+
+	// Configure SASL authentication if enabled
+	if saslCfg.Enabled {
+		mechanism, err := createSASLMechanism(saslCfg)
+		if err == nil {
+			transport.SASL = mechanism
+		}
+	}
+
+	return transport
 }
 
 // ReadMessage reads a single message from Kafka

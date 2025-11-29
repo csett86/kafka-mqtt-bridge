@@ -34,14 +34,16 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 		kafkaDestTopic = "" // Use dynamic topic writing
 	}
 
-	// Initialize Kafka client with separate read/write topics
-	kafkaClient, err := kafka.NewClient(
-		cfg.Kafka.Brokers,
-		cfg.Kafka.SourceTopic,
-		kafkaDestTopic,
-		cfg.Kafka.GroupID,
-		logger,
-	)
+	// Initialize Kafka client with full configuration support (SASL/TLS)
+	kafkaClient, err := kafka.NewClientWithConfig(kafka.ClientConfig{
+		Brokers:    cfg.Kafka.Brokers,
+		ReadTopic:  cfg.Kafka.SourceTopic,
+		WriteTopic: kafkaDestTopic,
+		GroupID:    cfg.Kafka.GroupID,
+		SASL:       cfg.Kafka.SASL,
+		TLS:        cfg.Kafka.TLS,
+		Logger:     logger,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kafka client: %w", err)
 	}
