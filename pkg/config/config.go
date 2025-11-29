@@ -37,6 +37,15 @@ type KafkaConfig struct {
 	GroupID       string         `yaml:"group_id"`
 }
 
+// MQTTTLSConfig contains TLS settings for MQTT connection
+type MQTTTLSConfig struct {
+	Enabled            bool   `yaml:"enabled"`              // Enable TLS connection
+	CAFile             string `yaml:"ca_file"`              // Path to CA certificate file
+	CertFile           string `yaml:"cert_file"`            // Path to client certificate file (for mutual TLS)
+	KeyFile            string `yaml:"key_file"`             // Path to client private key file (for mutual TLS)
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"` // Skip server certificate verification (not recommended for production)
+}
+
 // MQTTConfig contains MQTT connection settings
 type MQTTConfig struct {
 	Broker        string         `yaml:"broker"`
@@ -48,6 +57,7 @@ type MQTTConfig struct {
 	DestTopic     string         `yaml:"dest_topic"`     // Topic to publish to (for Kafka→MQTT) - deprecated, use topic_mappings
 	TopicMappings []TopicMapping `yaml:"topic_mappings"` // Dynamic topic mappings for Kafka→MQTT
 	ClientID      string         `yaml:"client_id"`
+	TLS           MQTTTLSConfig  `yaml:"tls"` // TLS configuration
 }
 
 // BridgeConfig contains bridge-specific settings
