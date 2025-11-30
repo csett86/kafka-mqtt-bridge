@@ -319,15 +319,23 @@ bridge:
 	t.Logf("Published message to Kafka topic %s: %s", kafkaTopic, testMessage2)
 
 	// Wait for the message to appear on MQTT
-	select {
-	case received := <-receivedMessages:
-		if received != testMessage2 {
-			t.Errorf("Second message mismatch: got %q, want %q", received, testMessage2)
-		} else {
-			t.Logf("Successfully received second bridged message on MQTT after recovery: %s", received)
+	// Note: After Kafka restart, the consumer group may redeliver messages that weren't
+	// committed before the restart. We need to drain any such messages until we see
+	// the message we're looking for.
+	timeout := time.After(30 * time.Second)
+	foundMessage := false
+	for !foundMessage {
+		select {
+		case received := <-receivedMessages:
+			if received == testMessage2 {
+				t.Logf("Successfully received second bridged message on MQTT after recovery: %s", received)
+				foundMessage = true
+			} else {
+				t.Logf("Received redelivered message (expected after restart), continuing to wait: %s", received)
+			}
+		case <-timeout:
+			t.Fatal("Timeout waiting for second bridged message on MQTT after Kafka restart")
 		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("Timeout waiting for second bridged message on MQTT after Kafka restart")
 	}
 
 	t.Log("Successfully tested Kafka connection recovery!")
