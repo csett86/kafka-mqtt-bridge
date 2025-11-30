@@ -47,7 +47,7 @@ func NewClient(broker string, readTopic string, writeTopic string, groupID strin
 			Topic:          readTopic,
 			GroupID:        groupID,
 			StartOffset:    kafka.FirstOffset, // Start from beginning for new consumer groups
-			CommitInterval: 1 * time.Second,   // Commit offsets periodically for recovery
+			CommitInterval: 0,                 // Disable auto-commit; we commit manually after successful processing
 			// Connection recovery settings
 			MaxAttempts:       0, // Unlimited retries for connection failures
 			ReadBackoffMin:    100 * time.Millisecond,
@@ -116,7 +116,58 @@ func isTransientError(err error) bool {
 	return errors.As(err, &opErr)
 }
 
+// FetchMessage fetches a single message from Kafka without committing the offset.
+// The caller must call CommitMessage after successful processing.
+func (c *Client) FetchMessage(ctx context.Context) (*kafka.Message, error) {
+	backoff := readRetryDelay
+
+	for {
+		msg, err := c.reader.FetchMessage(ctx)
+		if err == nil {
+			return &msg, nil
+		}
+
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("failed to fetch message: %w", ctx.Err())
+		}
+
+		// Check if it's a transient error that should be retried
+		if isTransientError(err) {
+			c.logger.Warn("Kafka fetch failed, will retry",
+				zap.Error(err),
+				zap.Duration("backoff", backoff),
+			)
+
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("failed to fetch message: %w", ctx.Err())
+			case <-time.After(backoff):
+			}
+
+			// Exponential backoff with cap
+			backoff = backoff * 2
+			if backoff > maxRetryBackoff {
+				backoff = maxRetryBackoff
+			}
+			continue
+		}
+
+		return nil, fmt.Errorf("failed to fetch message: %w", err)
+	}
+}
+
+// CommitMessage commits the offset for a message after successful processing
+func (c *Client) CommitMessage(ctx context.Context, msg *kafka.Message) error {
+	if err := c.reader.CommitMessages(ctx, *msg); err != nil {
+		return fmt.Errorf("failed to commit message: %w", err)
+	}
+	return nil
+}
+
 // ReadMessage reads a single message from Kafka with automatic reconnection
+// Note: This method auto-commits the offset. Use FetchMessage + CommitMessage
+// for manual offset control.
 func (c *Client) ReadMessage(ctx context.Context) (*kafka.Message, error) {
 	backoff := readRetryDelay
 
