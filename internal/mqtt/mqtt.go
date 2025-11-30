@@ -173,37 +173,6 @@ func createTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 	return tlsCfg, nil
 }
 
-// createTLSConfig creates a tls.Config from TLSConfig
-func createTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
-	tlsCfg := &tls.Config{
-		InsecureSkipVerify: cfg.InsecureSkipVerify,
-	}
-
-	// Load CA certificate if provided
-	if cfg.CAFile != "" {
-		caCert, err := os.ReadFile(cfg.CAFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read CA certificate: %w", err)
-		}
-		caCertPool := x509.NewCertPool()
-		if !caCertPool.AppendCertsFromPEM(caCert) {
-			return nil, fmt.Errorf("failed to parse CA certificate")
-		}
-		tlsCfg.RootCAs = caCertPool
-	}
-
-	// Load client certificate and key if provided (for mutual TLS)
-	if cfg.CertFile != "" && cfg.KeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load client certificate: %w", err)
-		}
-		tlsCfg.Certificates = []tls.Certificate{cert}
-	}
-
-	return tlsCfg, nil
-}
-
 // Publish publishes a message to an MQTT topic
 func (c *Client) Publish(topic string, payload []byte) error {
 	token := c.client.Publish(topic, 1, false, payload)
