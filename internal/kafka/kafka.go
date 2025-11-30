@@ -94,7 +94,7 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 		if topic != "" {
 			msg.Topic = topic
 		}
-		
+
 		err := c.writer.WriteMessages(ctx, msg)
 		if err == nil {
 			return nil

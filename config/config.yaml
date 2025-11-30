@@ -34,6 +34,18 @@ mqtt:
   # topic_mappings:
   #   - source: "kafka-events-*"
   #     target: "mqtt/{1}/events"
+  
+  # TLS Configuration for secure MQTT connections
+  # tls:
+  #   enabled: true
+  #   # Path to CA certificate file for verifying server certificate
+  #   ca_file: "/path/to/ca.crt"
+  #   # Path to client certificate file (for mutual TLS authentication)
+  #   cert_file: "/path/to/client.crt"
+  #   # Path to client private key file (for mutual TLS authentication)
+  #   key_file: "/path/to/client.key"
+  #   # Skip server certificate verification (not recommended for production)
+  #   insecure_skip_verify: false
 
 # Bridge Configuration
 bridge:

@@ -1,11 +1,23 @@
 package mqtt
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"os"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"go.uber.org/zap"
 )
+
+// TLSConfig holds TLS configuration for MQTT connection
+type TLSConfig struct {
+	Enabled            bool
+	CAFile             string
+	CertFile           string
+	KeyFile            string
+	InsecureSkipVerify bool
+}
 
 // Client wraps the MQTT client
 type Client struct {
@@ -13,15 +25,39 @@ type Client struct {
 	logger *zap.Logger
 }
 
-// NewClient creates a new MQTT client
+// NewClient creates a new MQTT client with optional TLS support
 func NewClient(broker string, port int, username string, password string, clientID string, logger *zap.Logger) (*Client, error) {
+	return NewClientWithTLS(broker, port, username, password, clientID, nil, logger)
+}
+
+// NewClientWithTLS creates a new MQTT client with TLS configuration
+func NewClientWithTLS(broker string, port int, username string, password string, clientID string, tlsConfig *TLSConfig, logger *zap.Logger) (*Client, error) {
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", broker, port))
+
+	// Determine protocol and set broker URL
+	protocol := "tcp"
+	if tlsConfig != nil && tlsConfig.Enabled {
+		protocol = "ssl"
+	}
+	opts.AddBroker(fmt.Sprintf("%s://%s:%d", protocol, broker, port))
 	opts.SetClientID(clientID)
 
 	if username != "" {
 		opts.SetUsername(username)
 		opts.SetPassword(password)
+	}
+
+	// Configure TLS if enabled
+	if tlsConfig != nil && tlsConfig.Enabled {
+		tlsCfg, err := createTLSConfig(tlsConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS config: %w", err)
+		}
+		opts.SetTLSConfig(tlsCfg)
+		logger.Info("TLS enabled for MQTT connection",
+			zap.Bool("insecureSkipVerify", tlsConfig.InsecureSkipVerify),
+			zap.Bool("clientCertEnabled", tlsConfig.CertFile != ""),
+		)
 	}
 
 	opts.SetAutoReconnect(true)
@@ -36,12 +72,44 @@ func NewClient(broker string, port int, username string, password string, client
 	logger.Info("Connected to MQTT broker",
 		zap.String("broker", broker),
 		zap.Int("port", port),
+		zap.Bool("tlsEnabled", tlsConfig != nil && tlsConfig.Enabled),
 	)
 
 	return &Client{
 		client: mqttClient,
 		logger: logger,
 	}, nil
+}
+
+// createTLSConfig creates a tls.Config from TLSConfig
+func createTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
+	tlsCfg := &tls.Config{
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+	}
+
+	// Load CA certificate if provided
+	if cfg.CAFile != "" {
+		caCert, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA certificate: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate")
+		}
+		tlsCfg.RootCAs = caCertPool
+	}
+
+	// Load client certificate and key if provided (for mutual TLS)
+	if cfg.CertFile != "" && cfg.KeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+
+	return tlsCfg, nil
 }
 
 // Publish publishes a message to an MQTT topic

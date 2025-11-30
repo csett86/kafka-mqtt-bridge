@@ -18,7 +18,7 @@ type Mapper struct {
 
 // compiledMapping holds a pre-compiled mapping for efficient matching
 type compiledMapping struct {
-	sourcePattern *regexp.Regexp
+	sourcePattern  *regexp.Regexp
 	targetTemplate string
 	sourceLiteral  string // Original source pattern for MQTT subscriptions
 }
@@ -79,14 +79,14 @@ func patternToRegex(pattern string) (*regexp.Regexp, error) {
 		hashPlaceholder = "\x00HASH\x00"
 		starPlaceholder = "\x00STAR\x00"
 	)
-	
+
 	pattern = strings.ReplaceAll(pattern, "+", plusPlaceholder)
 	pattern = strings.ReplaceAll(pattern, "#", hashPlaceholder)
 	pattern = strings.ReplaceAll(pattern, "*", starPlaceholder)
-	
+
 	// Escape regex special characters
 	escaped := regexp.QuoteMeta(pattern)
-	
+
 	// Replace placeholders with regex patterns
 	// + -> single level capture group (no slashes)
 	escaped = strings.ReplaceAll(escaped, plusPlaceholder, `([^/]+)`)
@@ -94,10 +94,10 @@ func patternToRegex(pattern string) (*regexp.Regexp, error) {
 	escaped = strings.ReplaceAll(escaped, starPlaceholder, `([^/]+)`)
 	// # -> multi-level capture group (including slashes)
 	escaped = strings.ReplaceAll(escaped, hashPlaceholder, `(.*)`)
-	
+
 	// Anchor the pattern
 	escaped = "^" + escaped + "$"
-	
+
 	return regexp.Compile(escaped)
 }
 
