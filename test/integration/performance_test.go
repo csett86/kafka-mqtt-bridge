@@ -82,8 +82,7 @@ func TestPerformance1000Messages(t *testing.T) {
 	// Create a test configuration for the bridge
 	cfg := &config.Config{
 		Kafka: config.KafkaConfig{
-
-			Broker: kafkaBrokers,
+			Broker:      kafkaBrokers,
 			SourceTopic: kafkaTopic,
 			GroupID:     fmt.Sprintf("perf-test-1000-group-%d", time.Now().UnixNano()),
 		},
@@ -261,8 +260,7 @@ func TestPerformance10LargeMessages(t *testing.T) {
 	// Create a test configuration for the bridge
 	cfg := &config.Config{
 		Kafka: config.KafkaConfig{
-
-			Broker: kafkaBrokers,
+			Broker:      kafkaBrokers,
 			SourceTopic: kafkaTopic,
 			GroupID:     fmt.Sprintf("perf-test-large-group-%d", time.Now().UnixNano()),
 		},
