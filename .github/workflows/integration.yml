@@ -2,7 +2,7 @@ name: Integration Tests
 
 on:
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
 
 permissions:
   contents: read
@@ -27,7 +27,7 @@ jobs:
       run: make integration-up
 
     - name: Run integration tests
-      run: go test -v -race -timeout 5m ./test/integration/...
+      run: make integration-test-only
 
     - name: Stop integration test infrastructure
       if: always()
