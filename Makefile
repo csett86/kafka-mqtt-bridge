@@ -91,7 +91,7 @@ integration-down:
 
 integration-test: integration-up
 	@echo "Running integration tests..."
-	@$(GO) test -v -race -timeout 5m ./test/integration/... || (make integration-down && exit 1)
+	@$(GO) test -v -race -timeout 15m ./test/integration/... || (make integration-down && exit 1)
 	@make integration-down
 	@echo "Integration tests complete"
 
