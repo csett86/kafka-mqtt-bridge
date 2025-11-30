@@ -29,6 +29,9 @@ services:
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Allow larger messages for performance testing (2MB)
+      KAFKA_MESSAGE_MAX_BYTES: 2097152
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 2097152
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 10s
@@ -44,6 +47,20 @@ services:
       - ./test/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     healthcheck:
       test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "1883", "-t", "$$SYS/#", "-E", "-i", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Mosquitto with TLS and mutual TLS (client certificate) authentication
+  mosquitto-tls:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "8883:8883"
+    volumes:
+      - ./test/mosquitto-tls.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./test/certs:/mosquitto/certs:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "8883", "--cafile", "/mosquitto/certs/ca.crt", "--cert", "/mosquitto/certs/client.crt", "--key", "/mosquitto/certs/client.key", "-t", "$$SYS/#", "-E", "-i", "healthcheck"]
       interval: 5s
       timeout: 5s
       retries: 5

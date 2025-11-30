@@ -16,11 +16,11 @@ import (
 
 // Bridge manages the connection between Kafka and MQTT
 type Bridge struct {
-	kafkaClient     *kafka.Client
-	mqttClient      *mqtt.Client
-	config          *config.Config
-	logger          *zap.Logger
-	done            chan struct{}
+	kafkaClient       *kafka.Client
+	mqttClient        *mqtt.Client
+	config            *config.Config
+	logger            *zap.Logger
+	done              chan struct{}
 	mqttToKafkaMapper *topicmapper.Mapper // Maps MQTT topics to Kafka topics
 	kafkaToMQTTMapper *topicmapper.Mapper // Maps Kafka topics to MQTT topics
 }
@@ -36,7 +36,7 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 
 	// Initialize Kafka client with full configuration support (SASL/TLS)
 	kafkaClient, err := kafka.NewClientWithConfig(kafka.ClientConfig{
-		Brokers:    cfg.Kafka.Brokers,
+		Broker:     cfg.Kafka.Broker,
 		ReadTopic:  cfg.Kafka.SourceTopic,
 		WriteTopic: kafkaDestTopic,
 		GroupID:    cfg.Kafka.GroupID,
@@ -48,13 +48,26 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 		return nil, fmt.Errorf("failed to create Kafka client: %w", err)
 	}
 
-	// Initialize MQTT client
-	mqttClient, err := mqtt.NewClient(
+	// Prepare TLS configuration if enabled
+	var tlsConfig *mqtt.TLSConfig
+	if cfg.MQTT.TLS.Enabled {
+		tlsConfig = &mqtt.TLSConfig{
+			Enabled:            cfg.MQTT.TLS.Enabled,
+			CAFile:             cfg.MQTT.TLS.CAFile,
+			CertFile:           cfg.MQTT.TLS.CertFile,
+			KeyFile:            cfg.MQTT.TLS.KeyFile,
+			InsecureSkipVerify: cfg.MQTT.TLS.InsecureSkipVerify,
+		}
+	}
+
+	// Initialize MQTT client with TLS support
+	mqttClient, err := mqtt.NewClientWithTLS(
 		cfg.MQTT.Broker,
 		cfg.MQTT.Port,
 		cfg.MQTT.Username,
 		cfg.MQTT.Password,
 		cfg.MQTT.ClientID,
+		tlsConfig,
 		logger,
 	)
 	if err != nil {
@@ -104,7 +117,7 @@ func (b *Bridge) Start(ctx context.Context) error {
 	hasKafkaSource := b.config.Kafka.SourceTopic != ""
 	hasMQTTMappings := b.kafkaToMQTTMapper != nil && b.kafkaToMQTTMapper.HasMappings()
 	kafkaToMQTTEnabled := hasKafkaSource && (b.config.MQTT.DestTopic != "" || hasMQTTMappings)
-	
+
 	if kafkaToMQTTEnabled {
 		wg.Add(1)
 		go func() {
@@ -125,7 +138,7 @@ func (b *Bridge) Start(ctx context.Context) error {
 	// Start MQTT→Kafka bridging if configured
 	hasKafkaMappings := b.mqttToKafkaMapper != nil && b.mqttToKafkaMapper.HasMappings()
 	mqttToKafkaEnabled := (b.config.MQTT.SourceTopic != "" && b.config.Kafka.DestTopic != "") || hasKafkaMappings
-	
+
 	if mqttToKafkaEnabled {
 		if err := b.startMQTTToKafka(ctx); err != nil {
 			return fmt.Errorf("failed to start MQTT→Kafka bridge: %w", err)

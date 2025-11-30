@@ -82,7 +82,7 @@ func TestSASLTLSClientConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := kafka.ClientConfig{
-				Brokers:    []string{"localhost:9092"},
+				Broker:     "localhost:9092",
 				ReadTopic:  "test-topic",
 				WriteTopic: "test-topic",
 				GroupID:    "test-group",
@@ -127,8 +127,7 @@ func TestSASLTLSBridgeBinaryConfig(t *testing.T) {
 	configContent := fmt.Sprintf(`
 # Kafka Configuration with SASL/TLS
 kafka:
-  brokers:
-    - "fake-eventhub.servicebus.windows.net:9093"
+  broker: "fake-eventhub.servicebus.windows.net:9093"
   source_topic: "test-topic"
   group_id: "test-sasl-group-%d"
   sasl:
@@ -208,7 +207,7 @@ func TestSASLTLSRealConnection(t *testing.T) {
 	t.Logf("Testing real SASL/TLS connection to: %s", saslKafkaBroker)
 
 	cfg := kafka.ClientConfig{
-		Brokers:    []string{saslKafkaBroker},
+		Broker:     saslKafkaBroker,
 		WriteTopic: "test-sasl-topic",
 		GroupID:    fmt.Sprintf("test-sasl-group-%d", time.Now().UnixNano()),
 		SASL: config.SASLConfig{
@@ -259,8 +258,7 @@ func TestSASLTLSBridgeWithRealEventHub(t *testing.T) {
 	// Create a config file for MQTT→EventHub bridging
 	configContent := fmt.Sprintf(`
 kafka:
-  brokers:
-    - "%s"
+  broker: "%s"
   dest_topic: "test-mqtt-to-eventhub"
   group_id: "test-eventhub-group-%d"
   sasl:
@@ -351,7 +349,7 @@ func TestTLSConfiguration(t *testing.T) {
 
 	// Test with TLS enabled
 	cfg := kafka.ClientConfig{
-		Brokers:    []string{"localhost:9093"},
+		Broker:     "localhost:9093",
 		WriteTopic: "test-topic",
 		GroupID:    "test-group",
 		TLS: config.TLSConfig{
@@ -392,7 +390,7 @@ func TestSASLPlainMechanism(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := kafka.ClientConfig{
-				Brokers:    []string{"localhost:9092"},
+				Broker:     "localhost:9092",
 				WriteTopic: "test-topic",
 				GroupID:    "test-group",
 				SASL: config.SASLConfig{

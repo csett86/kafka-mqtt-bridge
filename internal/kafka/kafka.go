@@ -26,14 +26,14 @@ type Client struct {
 	reader       *kafka.Reader
 	writer       *kafka.Writer
 	dynamicWrite bool // If true, topic is specified per message
-	brokers      []string
+	broker       string
 	logger       *zap.Logger
 	dialer       *kafka.Dialer
 }
 
 // ClientConfig holds configuration for creating a Kafka client
 type ClientConfig struct {
-	Brokers    []string
+	Broker     string
 	ReadTopic  string
 	WriteTopic string
 	GroupID    string
@@ -86,9 +86,9 @@ func createSASLMechanism(cfg config.SASLConfig) (sasl.Mechanism, error) {
 // NewClient creates a new Kafka client with separate read and write topics.
 //
 // Deprecated: NewClient is deprecated. Use NewClientWithConfig for full configuration support.
-func NewClient(brokers []string, readTopic string, writeTopic string, groupID string, logger *zap.Logger) (*Client, error) {
+func NewClient(broker string, readTopic string, writeTopic string, groupID string, logger *zap.Logger) (*Client, error) {
 	return NewClientWithConfig(ClientConfig{
-		Brokers:    brokers,
+		Broker:     broker,
 		ReadTopic:  readTopic,
 		WriteTopic: writeTopic,
 		GroupID:    groupID,
@@ -99,8 +99,8 @@ func NewClient(brokers []string, readTopic string, writeTopic string, groupID st
 // NewClientWithConfig creates a new Kafka client with full configuration support
 // including SASL authentication and TLS encryption for Azure Event Hubs compatibility
 func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
-	if len(cfg.Brokers) == 0 {
-		return nil, fmt.Errorf("no kafka brokers provided")
+	if cfg.Broker == "" {
+		return nil, fmt.Errorf("no kafka broker provided")
 	}
 
 	// Create dialer with SASL/TLS configuration
@@ -112,7 +112,7 @@ func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
 	var reader *kafka.Reader
 	if cfg.ReadTopic != "" {
 		readerConfig := kafka.ReaderConfig{
-			Brokers:     cfg.Brokers,
+			Brokers:     []string{cfg.Broker},
 			Topic:       cfg.ReadTopic,
 			GroupID:     cfg.GroupID,
 			StartOffset: kafka.FirstOffset, // Start from beginning for new consumer groups
@@ -130,7 +130,7 @@ func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
 	var writer *kafka.Writer
 	if !dynamicWrite {
 		writer = &kafka.Writer{
-			Addr:                   kafka.TCP(cfg.Brokers...),
+			Addr:                   kafka.TCP(cfg.Broker),
 			Topic:                  cfg.WriteTopic,
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
@@ -139,7 +139,7 @@ func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
 	} else {
 		// Create a writer without a fixed topic for dynamic topic mapping
 		writer = &kafka.Writer{
-			Addr:                   kafka.TCP(cfg.Brokers...),
+			Addr:                   kafka.TCP(cfg.Broker),
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
 			Transport:              transport,
@@ -150,7 +150,7 @@ func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
 		reader:       reader,
 		writer:       writer,
 		dynamicWrite: dynamicWrite,
-		brokers:      cfg.Brokers,
+		broker:       cfg.Broker,
 		logger:       cfg.Logger,
 		dialer:       dialer,
 	}, nil
@@ -205,7 +205,7 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 		if topic != "" {
 			msg.Topic = topic
 		}
-		
+
 		err := c.writer.WriteMessages(ctx, msg)
 		if err == nil {
 			return nil

@@ -10,8 +10,7 @@ func TestLoadConfig_WithSASLAndTLS(t *testing.T) {
 	// Create a temporary config file with SASL and TLS settings
 	configContent := `
 kafka:
-  brokers:
-    - "test.servicebus.windows.net:9093"
+  broker: "test.servicebus.windows.net:9093"
   source_topic: "test-events"
   dest_topic: "test-output"
   group_id: "$Default"
@@ -65,8 +64,8 @@ bridge:
 	}
 
 	// Verify other settings
-	if len(cfg.Kafka.Brokers) != 1 || cfg.Kafka.Brokers[0] != "test.servicebus.windows.net:9093" {
-		t.Errorf("Brokers = %v, want [test.servicebus.windows.net:9093]", cfg.Kafka.Brokers)
+	if cfg.Kafka.Broker != "test.servicebus.windows.net:9093" {
+		t.Errorf("Broker = %q, want %q", cfg.Kafka.Broker, "test.servicebus.windows.net:9093")
 	}
 	if cfg.Kafka.GroupID != "$Default" {
 		t.Errorf("GroupID = %q, want %q", cfg.Kafka.GroupID, "$Default")
@@ -77,8 +76,7 @@ func TestLoadConfig_WithoutSASL(t *testing.T) {
 	// Create a temporary config file without SASL settings
 	configContent := `
 kafka:
-  brokers:
-    - "localhost:9092"
+  broker: "localhost:9092"
   source_topic: "events"
 
 mqtt:
@@ -126,8 +124,7 @@ func TestLoadConfig_SASLEnabledOnly(t *testing.T) {
 	// Create a config with only SASL enabled (no TLS) - edge case
 	configContent := `
 kafka:
-  brokers:
-    - "localhost:9092"
+  broker: "localhost:9092"
   sasl:
     enabled: true
     mechanism: "PLAIN"

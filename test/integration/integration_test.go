@@ -117,8 +117,7 @@ func TestKafkaToMQTTBridge(t *testing.T) {
 	// Create a temporary config file for the bridge
 	configContent := fmt.Sprintf(`
 kafka:
-  brokers:
-    - "%s"
+  broker: "%s"
   source_topic: "%s"
   group_id: "test-bridge-group-%d"
 
@@ -233,8 +232,7 @@ func TestBridgeMultipleMessages(t *testing.T) {
 	// Create a temporary config file for the bridge
 	configContent := fmt.Sprintf(`
 kafka:
-  brokers:
-    - "%s"
+  broker: "%s"
   source_topic: "%s"
   group_id: "test-bridge-multi-group-%d"
 
@@ -367,8 +365,7 @@ func TestMQTTToKafkaBridge(t *testing.T) {
 	// Create a temporary config file for the bridge (MQTT→Kafka only)
 	configContent := fmt.Sprintf(`
 kafka:
-  brokers:
-    - "%s"
+  broker: "%s"
   dest_topic: "%s"
   group_id: "test-mqtt-to-kafka-group-%d"
 

@@ -50,8 +50,7 @@ Edit the configuration file with your Kafka and MQTT settings:
 
 ```yaml
 kafka:
-  brokers:
-    - "localhost:9092"
+  broker: "localhost:9092"
   # Topic to read from for Kafka→MQTT bridging
   source_topic: "events"
   # Topic to write to for MQTT→Kafka bridging
@@ -81,8 +80,7 @@ For more flexible routing, you can use topic mappings with wildcard patterns:
 
 ```yaml
 kafka:
-  brokers:
-    - "localhost:9092"
+  broker: "localhost:9092"
   source_topic: "events"
   group_id: "kafka-mqtt-bridge"
   
@@ -125,8 +123,7 @@ To connect to Azure Event Hubs (which uses the Kafka protocol), enable SASL auth
 
 ```yaml
 kafka:
-  brokers:
-    - "your-namespace.servicebus.windows.net:9093"
+  broker: "your-namespace.servicebus.windows.net:9093"
   source_topic: "your-event-hub-name"
   dest_topic: "your-event-hub-name"
   group_id: "$Default"

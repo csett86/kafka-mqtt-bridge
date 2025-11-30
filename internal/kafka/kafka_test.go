@@ -148,7 +148,7 @@ func TestNewClientWithConfig(t *testing.T) {
 		{
 			name: "Valid config with SASL and TLS",
 			cfg: ClientConfig{
-				Brokers:    []string{"test.servicebus.windows.net:9093"},
+				Broker:     "test.servicebus.windows.net:9093",
 				ReadTopic:  "test-topic",
 				WriteTopic: "test-topic",
 				GroupID:    "$Default",
@@ -166,7 +166,7 @@ func TestNewClientWithConfig(t *testing.T) {
 		{
 			name: "Valid config without SASL",
 			cfg: ClientConfig{
-				Brokers:    []string{"localhost:9092"},
+				Broker:     "localhost:9092",
 				ReadTopic:  "test-topic",
 				WriteTopic: "test-topic",
 				GroupID:    "test-group",
@@ -175,17 +175,17 @@ func TestNewClientWithConfig(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "Empty brokers",
+			name: "Empty broker",
 			cfg: ClientConfig{
-				Brokers: []string{},
-				Logger:  logger,
+				Broker: "",
+				Logger: logger,
 			},
 			wantErr: true,
 		},
 		{
 			name: "Unsupported SASL mechanism",
 			cfg: ClientConfig{
-				Brokers: []string{"localhost:9092"},
+				Broker: "localhost:9092",
 				SASL: config.SASLConfig{
 					Enabled:   true,
 					Mechanism: "UNSUPPORTED",
