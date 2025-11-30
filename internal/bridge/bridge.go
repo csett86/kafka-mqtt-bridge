@@ -46,13 +46,26 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 		return nil, fmt.Errorf("failed to create Kafka client: %w", err)
 	}
 
-	// Initialize MQTT client
-	mqttClient, err := mqtt.NewClient(
+	// Prepare TLS configuration if enabled
+	var tlsConfig *mqtt.TLSConfig
+	if cfg.MQTT.TLS.Enabled {
+		tlsConfig = &mqtt.TLSConfig{
+			Enabled:            cfg.MQTT.TLS.Enabled,
+			CAFile:             cfg.MQTT.TLS.CAFile,
+			CertFile:           cfg.MQTT.TLS.CertFile,
+			KeyFile:            cfg.MQTT.TLS.KeyFile,
+			InsecureSkipVerify: cfg.MQTT.TLS.InsecureSkipVerify,
+		}
+	}
+
+	// Initialize MQTT client with TLS support
+	mqttClient, err := mqtt.NewClientWithTLS(
 		cfg.MQTT.Broker,
 		cfg.MQTT.Port,
 		cfg.MQTT.Username,
 		cfg.MQTT.Password,
 		cfg.MQTT.ClientID,
+		tlsConfig,
 		logger,
 	)
 	if err != nil {
