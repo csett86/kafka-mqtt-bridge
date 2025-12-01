@@ -191,6 +191,22 @@ bridge:
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
+	// Setup Kafka writer and publish message BEFORE starting bridge
+	// This ensures the message exists when the bridge starts reading
+	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
+	defer kafkaWriter.Close()
+
+	// Publish message to Kafka - the bridge should forward it to MQTT when it starts
+	err = writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+		Key:   []byte("test-key"),
+		Value: []byte(testMessage),
+	}, 10)
+	if err != nil {
+		t.Fatalf("Failed to write message to Kafka: %v", err)
+	}
+
+	t.Logf("Published message to Kafka topic %s: %s", kafkaTopic, testMessage)
+
 	// Start the bridge binary
 	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
 	bridgeCmd.Dir = tmpDir
@@ -210,24 +226,6 @@ bridge:
 	}()
 
 	t.Log("TLS-enabled bridge binary started, waiting for it to initialize...")
-
-	// Give bridge time to start
-	time.Sleep(3 * time.Second)
-
-	// Setup Kafka writer to publish message
-	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
-	defer kafkaWriter.Close()
-
-	// Publish message to Kafka - the bridge should forward it to MQTT over TLS
-	err = writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
-		Key:   []byte("test-key"),
-		Value: []byte(testMessage),
-	}, 10)
-	if err != nil {
-		t.Fatalf("Failed to write message to Kafka: %v", err)
-	}
-
-	t.Logf("Published message to Kafka topic %s: %s", kafkaTopic, testMessage)
 
 	// Wait for the message to appear on MQTT (forwarded by the bridge over TLS)
 	select {
