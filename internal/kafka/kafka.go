@@ -191,13 +191,14 @@ func createDialer(saslCfg *SASLConfig, tlsCfg *TLSConfig, logger *zap.Logger) (*
 }
 
 // createTLSConfig creates a TLS configuration from TLSConfig
+// If no CA file is specified, the system's trusted CA certificates are used
 func createTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: cfg.InsecureSkipVerify,
 		MinVersion:         tls.VersionTLS12,
 	}
 
-	// Load CA certificate if provided
+	// Load custom CA certificate if provided; otherwise use system CA certificates
 	if cfg.CAFile != "" {
 		caCert, err := os.ReadFile(cfg.CAFile)
 		if err != nil {
