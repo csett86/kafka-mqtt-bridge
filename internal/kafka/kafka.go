@@ -237,7 +237,7 @@ func createSASLMechanism(cfg *SASLConfig) (sasl.Mechanism, error) {
 	case "SCRAM-SHA-512":
 		return scram.Mechanism(scram.SHA512, cfg.Username, cfg.Password)
 	default:
-		return nil, fmt.Errorf("unsupported SASL mechanism: %s (supported: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)", cfg.Mechanism)
+		return nil, fmt.Errorf("unsupported SASL mechanism: %q (supported: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)", cfg.Mechanism)
 	}
 }
 
