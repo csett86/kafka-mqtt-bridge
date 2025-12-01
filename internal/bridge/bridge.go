@@ -55,11 +55,20 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 		}
 	}
 
+	// Determine Kafka topics from bridge config
+	var kafkaReadTopic, kafkaWriteTopic string
+	if cfg.Bridge.KafkaToMQTT != nil {
+		kafkaReadTopic = cfg.Bridge.KafkaToMQTT.SourceTopic
+	}
+	if cfg.Bridge.MQTTToKafka != nil {
+		kafkaWriteTopic = cfg.Bridge.MQTTToKafka.DestTopic
+	}
+
 	// Initialize Kafka client with separate read/write topics and auth config
 	kafkaClient, err := kafka.NewClientWithConfig(kafka.ClientConfig{
 		Broker:     cfg.Kafka.Broker,
-		ReadTopic:  cfg.Kafka.SourceTopic,
-		WriteTopic: cfg.Kafka.DestTopic,
+		ReadTopic:  kafkaReadTopic,
+		WriteTopic: kafkaWriteTopic,
 		GroupID:    cfg.Kafka.GroupID,
 		SASL:       saslConfig,
 		TLS:        kafkaTLSConfig,
@@ -121,8 +130,9 @@ func (b *Bridge) Start(ctx context.Context) error {
 	var wg sync.WaitGroup
 
 	// Start Kafka→MQTT bridging if configured
-	hasKafkaSource := b.config.Kafka.SourceTopic != ""
-	kafkaToMQTTEnabled := hasKafkaSource && b.config.MQTT.DestTopic != ""
+	kafkaToMQTTEnabled := b.config.Bridge.KafkaToMQTT != nil &&
+		b.config.Bridge.KafkaToMQTT.SourceTopic != "" &&
+		b.config.Bridge.KafkaToMQTT.DestTopic != ""
 
 	if kafkaToMQTTEnabled {
 		wg.Add(1)
@@ -131,21 +141,23 @@ func (b *Bridge) Start(ctx context.Context) error {
 			b.runKafkaToMQTT(ctx)
 		}()
 		b.logger.Info("Started Kafka→MQTT bridge",
-			zap.String("kafkaTopic", b.config.Kafka.SourceTopic),
-			zap.String("mqttTopic", b.config.MQTT.DestTopic),
+			zap.String("kafkaTopic", b.config.Bridge.KafkaToMQTT.SourceTopic),
+			zap.String("mqttTopic", b.config.Bridge.KafkaToMQTT.DestTopic),
 			zap.Int("qos", b.config.MQTT.QoS))
 	}
 
 	// Start MQTT→Kafka bridging if configured
-	mqttToKafkaEnabled := b.config.MQTT.SourceTopic != "" && b.config.Kafka.DestTopic != ""
+	mqttToKafkaEnabled := b.config.Bridge.MQTTToKafka != nil &&
+		b.config.Bridge.MQTTToKafka.SourceTopic != "" &&
+		b.config.Bridge.MQTTToKafka.DestTopic != ""
 
 	if mqttToKafkaEnabled {
 		if err := b.startMQTTToKafka(ctx); err != nil {
 			return fmt.Errorf("failed to start MQTT→Kafka bridge: %w", err)
 		}
 		b.logger.Info("Started MQTT→Kafka bridge",
-			zap.String("mqttTopic", b.config.MQTT.SourceTopic),
-			zap.String("kafkaTopic", b.config.Kafka.DestTopic),
+			zap.String("mqttTopic", b.config.Bridge.MQTTToKafka.SourceTopic),
+			zap.String("kafkaTopic", b.config.Bridge.MQTTToKafka.DestTopic),
 			zap.Int("qos", b.config.MQTT.QoS))
 	}
 
@@ -179,8 +191,8 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 				continue
 			}
 
-			// Use static destination topic
-			mqttTopic := b.config.MQTT.DestTopic
+			// Use static destination topic from bridge config
+			mqttTopic := b.config.Bridge.KafkaToMQTT.DestTopic
 
 			if err := b.mqttClient.Publish(mqttTopic, msg.Value); err != nil {
 				b.logger.Error("Failed to publish message to MQTT", zap.Error(err))
@@ -214,7 +226,7 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 // startMQTTToKafka sets up MQTT subscription and forwards messages to Kafka
 func (b *Bridge) startMQTTToKafka(ctx context.Context) error {
 	handler := func(client pahomqtt.Client, msg pahomqtt.Message) {
-		kafkaTopic := b.config.Kafka.DestTopic
+		kafkaTopic := b.config.Bridge.MQTTToKafka.DestTopic
 		if err := b.kafkaClient.WriteMessage(ctx, nil, msg.Payload()); err != nil {
 			b.logger.Error("Failed to write message to Kafka", zap.Error(err))
 			// Don't acknowledge the message - it will be redelivered for QoS > 0
@@ -235,10 +247,9 @@ func (b *Bridge) startMQTTToKafka(ctx context.Context) error {
 		)
 	}
 
-	if b.config.MQTT.SourceTopic != "" {
-		if err := b.mqttClient.Subscribe(b.config.MQTT.SourceTopic, handler); err != nil {
-			return fmt.Errorf("failed to subscribe to MQTT topic: %w", err)
-		}
+	mqttSourceTopic := b.config.Bridge.MQTTToKafka.SourceTopic
+	if err := b.mqttClient.Subscribe(mqttSourceTopic, handler); err != nil {
+		return fmt.Errorf("failed to subscribe to MQTT topic: %w", err)
 	}
 
 	return nil

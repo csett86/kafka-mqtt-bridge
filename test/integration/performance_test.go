@@ -82,20 +82,22 @@ func TestPerformance1000Messages(t *testing.T) {
 	// Create a test configuration for the bridge
 	cfg := &config.Config{
 		Kafka: config.KafkaConfig{
-			Broker:      kafkaBrokers,
-			SourceTopic: kafkaTopic,
-			GroupID:     fmt.Sprintf("perf-test-1000-group-%d", time.Now().UnixNano()),
+			Broker:  kafkaBrokers,
+			GroupID: fmt.Sprintf("perf-test-1000-group-%d", time.Now().UnixNano()),
 		},
 		MQTT: config.MQTTConfig{
-			Broker:    mqttBroker,
-			Port:      mqttPort,
-			DestTopic: mqttTopic,
-			ClientID:  fmt.Sprintf("perf-test-1000-%d", time.Now().UnixNano()),
+			Broker:   mqttBroker,
+			Port:     mqttPort,
+			ClientID: fmt.Sprintf("perf-test-1000-%d", time.Now().UnixNano()),
 		},
 		Bridge: config.BridgeConfig{
 			Name:       "perf-test-1000",
 			LogLevel:   "warn", // Reduce log noise during performance tests
 			BufferSize: 1000,
+			KafkaToMQTT: &config.TopicMapping{
+				SourceTopic: kafkaTopic,
+				DestTopic:   mqttTopic,
+			},
 		},
 	}
 
@@ -260,20 +262,22 @@ func TestPerformance10LargeMessages(t *testing.T) {
 	// Create a test configuration for the bridge
 	cfg := &config.Config{
 		Kafka: config.KafkaConfig{
-			Broker:      kafkaBrokers,
-			SourceTopic: kafkaTopic,
-			GroupID:     fmt.Sprintf("perf-test-large-group-%d", time.Now().UnixNano()),
+			Broker:  kafkaBrokers,
+			GroupID: fmt.Sprintf("perf-test-large-group-%d", time.Now().UnixNano()),
 		},
 		MQTT: config.MQTTConfig{
-			Broker:    mqttBroker,
-			Port:      mqttPort,
-			DestTopic: mqttTopic,
-			ClientID:  fmt.Sprintf("perf-test-large-%d", time.Now().UnixNano()),
+			Broker:   mqttBroker,
+			Port:     mqttPort,
+			ClientID: fmt.Sprintf("perf-test-large-%d", time.Now().UnixNano()),
 		},
 		Bridge: config.BridgeConfig{
 			Name:       "perf-test-large",
 			LogLevel:   "warn",
 			BufferSize: 100,
+			KafkaToMQTT: &config.TopicMapping{
+				SourceTopic: kafkaTopic,
+				DestTopic:   mqttTopic,
+			},
 		},
 	}
 

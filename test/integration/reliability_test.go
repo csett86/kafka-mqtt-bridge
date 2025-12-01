@@ -35,20 +35,21 @@ func TestMQTTConnectionRecovery(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  dest_topic: "%s"
   group_id: "test-mqtt-recovery-group-%d"
 
 mqtt:
   broker: "%s"
   port: %d
-  source_topic: "%s"
   client_id: "test-mqtt-recovery-%d"
 
 bridge:
   name: "test-mqtt-recovery"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+  mqtt_to_kafka:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, mqttTopic, kafkaTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -188,20 +189,21 @@ func TestKafkaConnectionRecovery(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  source_topic: "%s"
   group_id: "test-kafka-recovery-group-%d"
 
 mqtt:
   broker: "%s"
   port: %d
-  dest_topic: "%s"
   client_id: "test-kafka-recovery-%d"
 
 bridge:
   name: "test-kafka-recovery"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+  kafka_to_mqtt:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, kafkaTopic, mqttTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()

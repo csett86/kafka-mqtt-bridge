@@ -33,13 +33,10 @@ type KafkaTLSConfig struct {
 
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
-	Broker       string          `yaml:"broker"`
-	SourceTopic  string          `yaml:"source_topic"`  // Topic to read from (for Kafka→MQTT)
-	SourceTopics []string        `yaml:"source_topics"` // Multiple topics to read from (for Kafka→MQTT)
-	DestTopic    string          `yaml:"dest_topic"`    // Topic to write to (for MQTT→Kafka)
-	GroupID      string          `yaml:"group_id"`
-	SASL         KafkaSASLConfig `yaml:"sasl"` // SASL authentication settings
-	TLS          KafkaTLSConfig  `yaml:"tls"`  // TLS settings
+	Broker  string          `yaml:"broker"`
+	GroupID string          `yaml:"group_id"`
+	SASL    KafkaSASLConfig `yaml:"sasl"` // SASL authentication settings
+	TLS     KafkaTLSConfig  `yaml:"tls"`  // TLS settings
 }
 
 // MQTTTLSConfig contains TLS settings for MQTT connection
@@ -57,20 +54,25 @@ type MQTTConfig struct {
 	Port         int           `yaml:"port"`
 	Username     string        `yaml:"username"`
 	Password     string        `yaml:"password"`
-	SourceTopic  string        `yaml:"source_topic"`  // Topic to subscribe to (for MQTT→Kafka)
-	SourceTopics []string      `yaml:"source_topics"` // Multiple topics to subscribe to (for MQTT→Kafka)
-	DestTopic    string        `yaml:"dest_topic"`    // Topic to publish to (for Kafka→MQTT)
 	ClientID     string        `yaml:"client_id"`
 	QoS          int           `yaml:"qos"`           // QoS level for MQTT operations (0, 1, or 2). Default: 1
 	CleanSession *bool         `yaml:"clean_session"` // CleanSession flag. Default: false when QoS > 0, true otherwise
 	TLS          MQTTTLSConfig `yaml:"tls"`           // TLS configuration
 }
 
+// TopicMapping defines a source and destination topic pair for bridging
+type TopicMapping struct {
+	SourceTopic string `yaml:"source_topic"` // Topic to read from
+	DestTopic   string `yaml:"dest_topic"`   // Topic to write to
+}
+
 // BridgeConfig contains bridge-specific settings
 type BridgeConfig struct {
-	Name       string `yaml:"name"`
-	LogLevel   string `yaml:"log_level"`
-	BufferSize int    `yaml:"buffer_size"`
+	Name        string        `yaml:"name"`
+	LogLevel    string        `yaml:"log_level"`
+	BufferSize  int           `yaml:"buffer_size"`
+	MQTTToKafka *TopicMapping `yaml:"mqtt_to_kafka"` // MQTT→Kafka topic mapping
+	KafkaToMQTT *TopicMapping `yaml:"kafka_to_mqtt"` // Kafka→MQTT topic mapping
 }
 
 // LoadConfig loads configuration from a YAML file

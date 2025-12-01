@@ -58,10 +58,6 @@ Edit the configuration file with your Kafka and MQTT settings:
 ```yaml
 kafka:
   broker: "localhost:9092"
-  # Topic to read from for Kafka→MQTT bridging
-  source_topic: "events"
-  # Topic to write to for MQTT→Kafka bridging
-  dest_topic: "mqtt-to-kafka"
   group_id: "kafka-mqtt-bridge"
 
 mqtt:
@@ -69,16 +65,21 @@ mqtt:
   port: 1883
   username: ""
   password: ""
-  # Topic to subscribe to for MQTT→Kafka bridging
-  source_topic: "mqtt/events"
-  # Topic to publish to for Kafka→MQTT bridging
-  dest_topic: "kafka/events"
   client_id: "kafka-mqtt-bridge"
+  qos: 1  # QoS level (0, 1, or 2)
 
 bridge:
   name: "kafka-mqtt-bridge"
   log_level: "info"
   buffer_size: 100
+  # MQTT to Kafka bridging - messages from MQTT source_topic are forwarded to Kafka dest_topic
+  mqtt_to_kafka:
+    source_topic: "mqtt/events"
+    dest_topic: "mqtt-to-kafka"
+  # Kafka to MQTT bridging - messages from Kafka source_topic are forwarded to MQTT dest_topic
+  kafka_to_mqtt:
+    source_topic: "events"
+    dest_topic: "kafka/events"
 ```
 
 ## Usage

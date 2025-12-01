@@ -131,20 +131,21 @@ func TestKafkaToMQTTBridge(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  source_topic: "%s"
   group_id: "test-bridge-group-%d"
 
 mqtt:
   broker: "%s"
   port: %d
-  dest_topic: "%s"
   client_id: "test-bridge-%d"
 
 bridge:
   name: "test-bridge"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+  kafka_to_mqtt:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, kafkaTopic, mqttTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -248,20 +249,21 @@ func TestBridgeMultipleMessages(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  source_topic: "%s"
   group_id: "test-bridge-multi-group-%d"
 
 mqtt:
   broker: "%s"
   port: %d
-  dest_topic: "%s"
   client_id: "test-bridge-multi-%d"
 
 bridge:
   name: "test-bridge-multi"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+  kafka_to_mqtt:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, kafkaTopic, mqttTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -381,20 +383,21 @@ func TestMQTTToKafkaBridge(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  dest_topic: "%s"
   group_id: "test-mqtt-to-kafka-group-%d"
 
 mqtt:
   broker: "%s"
   port: %d
-  source_topic: "%s"
   client_id: "test-mqtt-to-kafka-%d"
 
 bridge:
   name: "test-mqtt-to-kafka"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+  mqtt_to_kafka:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, mqttTopic, kafkaTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -609,13 +612,11 @@ func TestMQTTToKafkaBridgeWithQoS2(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  dest_topic: "%s"
   group_id: "test-mqtt-qos2-group-%d"
 
 mqtt:
   broker: "%s"
   port: %d
-  source_topic: "%s"
   client_id: "test-mqtt-qos2-%d"
   qos: 2
   clean_session: false
@@ -624,7 +625,10 @@ bridge:
   name: "test-mqtt-qos2"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+  mqtt_to_kafka:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, mqttTopic, kafkaTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -733,13 +737,11 @@ func TestKafkaToMQTTBridgeWithQoS2(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  source_topic: "%s"
   group_id: "test-kafka-qos2-group-%d"
 
 mqtt:
   broker: "%s"
   port: %d
-  dest_topic: "%s"
   client_id: "test-kafka-qos2-%d"
   qos: 2
   clean_session: false
@@ -748,7 +750,10 @@ bridge:
   name: "test-kafka-qos2"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+  kafka_to_mqtt:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, kafkaTopic, mqttTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
