@@ -1,11 +1,13 @@
 # Kafka-MQTT Bridge
 
-A Go application that bridges messages between Apache Kafka and MQTT brokers. This service reads messages from a Kafka topic and publishes them to an MQTT topic, enabling seamless integration between these two popular messaging systems.
+A Go application that bridges messages between Apache Kafka and MQTT brokers bidirectionally. This service reads messages from a single Kafka topic and publishes them to a single MQTT topic, and vice versa, enabling seamless integration between these two popular messaging systems. It supports MQTT QoS and only commits reads to Kafka once successfully delivered to MQTT.
 
 ## Features
 
 - Bidirectional message bridging between Kafka and MQTT
-- Configurable Kafka and MQTT connection settings
+- Configurable Kafka and MQTT connection settings in a single config file
+- Static binary releases for linux and windows without any dependencies
+- Implemented in Go with very low memory footprint (10MB)
 - Graceful shutdown handling
 - Comprehensive logging with Zap
 - Production-ready code structure following Go best practices
