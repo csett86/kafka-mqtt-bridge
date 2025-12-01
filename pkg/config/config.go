@@ -14,13 +14,32 @@ type Config struct {
 	Bridge BridgeConfig `yaml:"bridge"`
 }
 
+// KafkaSASLConfig contains SASL authentication settings for Kafka
+type KafkaSASLConfig struct {
+	Enabled   bool   `yaml:"enabled"`   // Enable SASL authentication
+	Mechanism string `yaml:"mechanism"` // SASL mechanism (PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)
+	Username  string `yaml:"username"`  // SASL username
+	Password  string `yaml:"password"`  // SASL password
+}
+
+// KafkaTLSConfig contains TLS settings for Kafka connection
+type KafkaTLSConfig struct {
+	Enabled            bool   `yaml:"enabled"`              // Enable TLS connection
+	CAFile             string `yaml:"ca_file"`              // Path to CA certificate file (optional)
+	CertFile           string `yaml:"cert_file"`            // Path to client certificate file (optional, for mutual TLS)
+	KeyFile            string `yaml:"key_file"`             // Path to client private key file (optional, for mutual TLS)
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"` // Skip server certificate verification (not recommended for production)
+}
+
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
-	Broker       string   `yaml:"broker"`
-	SourceTopic  string   `yaml:"source_topic"`  // Topic to read from (for Kafka→MQTT)
-	SourceTopics []string `yaml:"source_topics"` // Multiple topics to read from (for Kafka→MQTT)
-	DestTopic    string   `yaml:"dest_topic"`    // Topic to write to (for MQTT→Kafka)
-	GroupID      string   `yaml:"group_id"`
+	Broker       string          `yaml:"broker"`
+	SourceTopic  string          `yaml:"source_topic"`  // Topic to read from (for Kafka→MQTT)
+	SourceTopics []string        `yaml:"source_topics"` // Multiple topics to read from (for Kafka→MQTT)
+	DestTopic    string          `yaml:"dest_topic"`    // Topic to write to (for MQTT→Kafka)
+	GroupID      string          `yaml:"group_id"`
+	SASL         KafkaSASLConfig `yaml:"sasl"` // SASL authentication settings
+	TLS          KafkaTLSConfig  `yaml:"tls"`  // TLS settings
 }
 
 // MQTTTLSConfig contains TLS settings for MQTT connection

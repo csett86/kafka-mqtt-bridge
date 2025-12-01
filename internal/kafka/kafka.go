@@ -2,12 +2,19 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
+	"github.com/segmentio/kafka-go/sasl/plain"
+	"github.com/segmentio/kafka-go/sasl/scram"
 	"go.uber.org/zap"
 )
 
@@ -24,7 +31,7 @@ const (
 
 // Client wraps the Kafka reader and writer with connection recovery support
 type Client struct {
-	reader       *kafka.Reader
+	reader    *kafka.Reader
 	writer    *kafka.Writer
 	broker    string
 	readTopic string
@@ -32,19 +39,72 @@ type Client struct {
 	logger    *zap.Logger
 }
 
+// SASLConfig contains SASL authentication settings for Kafka
+type SASLConfig struct {
+	Enabled   bool
+	Mechanism string // PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
+	Username  string
+	Password  string
+}
+
+// TLSConfig contains TLS settings for Kafka connection
+type TLSConfig struct {
+	Enabled            bool
+	CAFile             string
+	CertFile           string
+	KeyFile            string
+	InsecureSkipVerify bool
+}
+
+// ClientConfig contains all configuration for creating a Kafka client
+type ClientConfig struct {
+	Broker     string
+	ReadTopic  string
+	WriteTopic string
+	GroupID    string
+	SASL       *SASLConfig
+	TLS        *TLSConfig
+}
+
 // NewClient creates a new Kafka client with separate read and write topics
 // and connection recovery support
 func NewClient(broker string, readTopic string, writeTopic string, groupID string, logger *zap.Logger) (*Client, error) {
-	if broker == "" {
+	return NewClientWithConfig(ClientConfig{
+		Broker:     broker,
+		ReadTopic:  readTopic,
+		WriteTopic: writeTopic,
+		GroupID:    groupID,
+	}, logger)
+}
+
+// NewClientWithConfig creates a new Kafka client with full configuration support
+// including SASL authentication and TLS for Azure Event Hubs compatibility
+func NewClientWithConfig(cfg ClientConfig, logger *zap.Logger) (*Client, error) {
+	if cfg.Broker == "" {
 		return nil, fmt.Errorf("no kafka broker provided")
 	}
 
+	// Create dialer with SASL and TLS if configured
+	dialer, err := createDialer(cfg.SASL, cfg.TLS, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dialer: %w", err)
+	}
+
+	// Create transport for writer with SASL and TLS
+	var transport *kafka.Transport
+	if dialer != nil {
+		transport = &kafka.Transport{
+			TLS:  dialer.TLS,
+			SASL: dialer.SASLMechanism,
+		}
+	}
+
 	var reader *kafka.Reader
-	if readTopic != "" {
-		reader = kafka.NewReader(kafka.ReaderConfig{
-			Brokers:        []string{broker},
-			Topic:          readTopic,
-			GroupID:        groupID,
+	if cfg.ReadTopic != "" {
+		readerConfig := kafka.ReaderConfig{
+			Brokers:        []string{cfg.Broker},
+			Topic:          cfg.ReadTopic,
+			GroupID:        cfg.GroupID,
 			StartOffset:    kafka.FirstOffset, // Start from beginning for new consumer groups
 			CommitInterval: 0,                 // Disable auto-commit; we commit manually after successful processing
 			// Connection recovery settings
@@ -54,14 +114,18 @@ func NewClient(broker string, readTopic string, writeTopic string, groupID strin
 			HeartbeatInterval: 3 * time.Second,
 			SessionTimeout:    30 * time.Second,
 			RebalanceTimeout:  30 * time.Second,
-		})
+		}
+		if dialer != nil {
+			readerConfig.Dialer = dialer
+		}
+		reader = kafka.NewReader(readerConfig)
 	}
 
 	var writer *kafka.Writer
-	if writeTopic != "" {
+	if cfg.WriteTopic != "" {
 		writer = &kafka.Writer{
-			Addr:                   kafka.TCP(broker),
-			Topic:                  writeTopic,
+			Addr:                   kafka.TCP(cfg.Broker),
+			Topic:                  cfg.WriteTopic,
 			Balancer:               &kafka.LeastBytes{},
 			AllowAutoTopicCreation: true,
 			// Connection recovery settings
@@ -71,16 +135,110 @@ func NewClient(broker string, readTopic string, writeTopic string, groupID strin
 			BatchTimeout:    100 * time.Millisecond,
 			RequiredAcks:    kafka.RequireOne,
 		}
+		if transport != nil {
+			writer.Transport = transport
+		}
 	}
 
 	return &Client{
 		reader:    reader,
 		writer:    writer,
-		broker:    broker,
-		readTopic: readTopic,
-		groupID:   groupID,
+		broker:    cfg.Broker,
+		readTopic: cfg.ReadTopic,
+		groupID:   cfg.GroupID,
 		logger:    logger,
 	}, nil
+}
+
+// createDialer creates a Kafka dialer with optional SASL and TLS configuration
+func createDialer(saslCfg *SASLConfig, tlsCfg *TLSConfig, logger *zap.Logger) (*kafka.Dialer, error) {
+	if (saslCfg == nil || !saslCfg.Enabled) && (tlsCfg == nil || !tlsCfg.Enabled) {
+		return nil, nil
+	}
+
+	dialer := &kafka.Dialer{
+		Timeout:   10 * time.Second,
+		DualStack: true,
+	}
+
+	// Configure TLS
+	if tlsCfg != nil && tlsCfg.Enabled {
+		tlsConfig, err := createTLSConfig(tlsCfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS config: %w", err)
+		}
+		dialer.TLS = tlsConfig
+		logger.Info("Kafka TLS enabled",
+			zap.Bool("insecureSkipVerify", tlsCfg.InsecureSkipVerify),
+			zap.Bool("clientCertEnabled", tlsCfg.CertFile != ""),
+		)
+	}
+
+	// Configure SASL
+	if saslCfg != nil && saslCfg.Enabled {
+		mechanism, err := createSASLMechanism(saslCfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SASL mechanism: %w", err)
+		}
+		dialer.SASLMechanism = mechanism
+		logger.Info("Kafka SASL enabled",
+			zap.String("mechanism", saslCfg.Mechanism),
+			zap.String("username", saslCfg.Username),
+		)
+	}
+
+	return dialer, nil
+}
+
+// createTLSConfig creates a TLS configuration from TLSConfig
+func createTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+		MinVersion:         tls.VersionTLS12,
+	}
+
+	// Load CA certificate if provided
+	if cfg.CAFile != "" {
+		caCert, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA certificate: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate")
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	// Load client certificate and key for mutual TLS
+	if cfg.CertFile != "" && cfg.KeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	return tlsConfig, nil
+}
+
+// createSASLMechanism creates a SASL mechanism from SASLConfig
+func createSASLMechanism(cfg *SASLConfig) (sasl.Mechanism, error) {
+	mechanism := strings.ToUpper(cfg.Mechanism)
+
+	switch mechanism {
+	case "PLAIN":
+		return plain.Mechanism{
+			Username: cfg.Username,
+			Password: cfg.Password,
+		}, nil
+	case "SCRAM-SHA-256":
+		return scram.Mechanism(scram.SHA256, cfg.Username, cfg.Password)
+	case "SCRAM-SHA-512":
+		return scram.Mechanism(scram.SHA512, cfg.Username, cfg.Password)
+	default:
+		return nil, fmt.Errorf("unsupported SASL mechanism: %s (supported: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)", cfg.Mechanism)
+	}
 }
 
 // isTransientError checks if the error is a transient connection error that should be retried

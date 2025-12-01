@@ -24,14 +24,38 @@ type Bridge struct {
 
 // New creates a new Bridge instance
 func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
-	// Initialize Kafka client with separate read/write topics
-	kafkaClient, err := kafka.NewClient(
-		cfg.Kafka.Broker,
-		cfg.Kafka.SourceTopic,
-		cfg.Kafka.DestTopic,
-		cfg.Kafka.GroupID,
-		logger,
-	)
+	// Prepare Kafka SASL configuration if enabled
+	var saslConfig *kafka.SASLConfig
+	if cfg.Kafka.SASL.Enabled {
+		saslConfig = &kafka.SASLConfig{
+			Enabled:   cfg.Kafka.SASL.Enabled,
+			Mechanism: cfg.Kafka.SASL.Mechanism,
+			Username:  cfg.Kafka.SASL.Username,
+			Password:  cfg.Kafka.SASL.Password,
+		}
+	}
+
+	// Prepare Kafka TLS configuration if enabled
+	var kafkaTLSConfig *kafka.TLSConfig
+	if cfg.Kafka.TLS.Enabled {
+		kafkaTLSConfig = &kafka.TLSConfig{
+			Enabled:            cfg.Kafka.TLS.Enabled,
+			CAFile:             cfg.Kafka.TLS.CAFile,
+			CertFile:           cfg.Kafka.TLS.CertFile,
+			KeyFile:            cfg.Kafka.TLS.KeyFile,
+			InsecureSkipVerify: cfg.Kafka.TLS.InsecureSkipVerify,
+		}
+	}
+
+	// Initialize Kafka client with separate read/write topics and auth config
+	kafkaClient, err := kafka.NewClientWithConfig(kafka.ClientConfig{
+		Broker:     cfg.Kafka.Broker,
+		ReadTopic:  cfg.Kafka.SourceTopic,
+		WriteTopic: cfg.Kafka.DestTopic,
+		GroupID:    cfg.Kafka.GroupID,
+		SASL:       saslConfig,
+		TLS:        kafkaTLSConfig,
+	}, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kafka client: %w", err)
 	}

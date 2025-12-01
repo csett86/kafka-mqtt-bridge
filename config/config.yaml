@@ -7,6 +7,27 @@ kafka:
   dest_topic: "mqtt-to-kafka"
   group_id: "kafka-mqtt-bridge"
   
+  # SASL Authentication (required for Azure Event Hubs)
+  # Azure Event Hubs uses SASL PLAIN authentication with the connection string
+  # sasl:
+  #   enabled: true
+  #   mechanism: "PLAIN"  # Supported: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
+  #   # For Azure Event Hubs, use "$ConnectionString" as username
+  #   username: "$ConnectionString"
+  #   # For Azure Event Hubs, use the full connection string as password
+  #   # Format: Endpoint=sb://<namespace>.servicebus.windows.net/;SharedAccessKeyName=<keyname>;SharedAccessKey=<key>
+  #   password: "your-connection-string-here"
+  
+  # TLS Configuration (required for Azure Event Hubs)
+  # Azure Event Hubs requires TLS for all connections
+  # tls:
+  #   enabled: true
+  #   # For Azure Event Hubs, system CA certificates are sufficient
+  #   # ca_file: "/path/to/ca.crt"  # Optional: Path to custom CA certificate
+  #   # cert_file: "/path/to/client.crt"  # Optional: For mutual TLS
+  #   # key_file: "/path/to/client.key"   # Optional: For mutual TLS
+  #   insecure_skip_verify: false
+  
   # Dynamic topic mappings for MQTT→Kafka bridging (alternative to dest_topic)
   # Supports wildcards: + (single level), # (multi-level), * (single level alias)
   # Use {1}, {2}, etc. to reference captured wildcard segments in target
