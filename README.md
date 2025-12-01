@@ -203,14 +203,10 @@ kafka-mqtt-bridge/
 - `go.uber.org/zap` - Structured logging
 - `gopkg.in/yaml.v3` - YAML configuration parsing
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Support
 
-For issues and questions, please open an issue on GitHub or contact the maintainers.
+For issues and questions, please open an issue on GitHub.
