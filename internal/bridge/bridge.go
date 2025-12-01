@@ -170,14 +170,14 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 		case <-b.done:
 			return
 		default:
-			// Read from Kafka
-			msg, err := b.kafkaClient.ReadMessage(ctx)
+			// Fetch from Kafka (without committing offset)
+			msg, err := b.kafkaClient.FetchMessage(ctx)
 			if err != nil {
 				// Check if context was cancelled
 				if ctx.Err() != nil {
 					return
 				}
-				b.logger.Error("Failed to read message from Kafka", zap.Error(err))
+				b.logger.Error("Failed to fetch message from Kafka", zap.Error(err))
 				continue
 			}
 
@@ -189,6 +189,10 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 				if mqttTopic == "" {
 					b.logger.Warn("No matching topic mapping for Kafka topic",
 						zap.String("kafkaTopic", msg.Topic))
+					// Commit the message even if we skip it (no matching topic)
+					if err := b.kafkaClient.CommitMessage(ctx, msg); err != nil {
+						b.logger.Error("Failed to commit skipped message", zap.Error(err))
+					}
 					continue
 				}
 			} else {
@@ -199,7 +203,15 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 			// Publish to MQTT
 			if err := b.mqttClient.Publish(mqttTopic, msg.Value); err != nil {
 				b.logger.Error("Failed to publish message to MQTT", zap.Error(err))
+				// Don't commit the offset - the message will be redelivered
 				continue
+			}
+
+			// Commit the offset only after successful MQTT delivery
+			if err := b.kafkaClient.CommitMessage(ctx, msg); err != nil {
+				b.logger.Error("Failed to commit message after MQTT delivery", zap.Error(err))
+				// Message was delivered to MQTT but commit failed
+				// On restart, it may be redelivered but that's safer than losing messages
 			}
 
 			b.logger.Debug("Message bridged",
