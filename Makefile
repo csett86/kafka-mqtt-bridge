@@ -1,4 +1,4 @@
-.PHONY: build test run clean fmt lint help integration-test integration-up integration-down
+.PHONY: build test run clean fmt lint help integration-test integration-up integration-down eventhubs-test eventhubs-up eventhubs-down eventhubs-test-only
 
 # Variables
 BINARY_NAME=kafka-mqtt-bridge
@@ -15,6 +15,9 @@ help:
 	@echo "  integration-test - Run integration tests (requires Docker)"
 	@echo "  integration-up   - Start integration test infrastructure"
 	@echo "  integration-down - Stop integration test infrastructure"
+	@echo "  eventhubs-test   - Run Event Hubs Emulator tests (requires Docker)"
+	@echo "  eventhubs-up     - Start Event Hubs Emulator infrastructure"
+	@echo "  eventhubs-down   - Stop Event Hubs Emulator infrastructure"
 	@echo "  clean            - Clean build artifacts"
 	@echo "  fmt              - Format code"
 	@echo "  lint             - Run linter"
@@ -82,3 +85,28 @@ integration-test: integration-up
 integration-test-only:
 	@echo "Running integration tests (infrastructure must be running)..."
 	@$(GO) test -v -race -timeout 15m ./test/integration/...
+
+# Azure Event Hubs Emulator test targets
+eventhubs-up:
+	@echo "Starting Event Hubs Emulator infrastructure..."
+	@docker compose -f docker-compose.eventhubs.yml up -d --wait --wait-timeout 180 || \
+		(echo "Timeout waiting for services to be healthy"; \
+		docker compose -f docker-compose.eventhubs.yml ps; \
+		docker compose -f docker-compose.eventhubs.yml logs; \
+		exit 1)
+	@echo "Event Hubs Emulator infrastructure is ready"
+
+eventhubs-down:
+	@echo "Stopping Event Hubs Emulator infrastructure..."
+	@docker compose -f docker-compose.eventhubs.yml down -v
+	@echo "Event Hubs Emulator infrastructure stopped"
+
+eventhubs-test: eventhubs-up
+	@echo "Running Event Hubs Emulator tests..."
+	@$(GO) test -v -race -timeout 15m -run TestEventHubs ./test/integration/... || (make eventhubs-down && exit 1)
+	@make eventhubs-down
+	@echo "Event Hubs Emulator tests complete"
+
+eventhubs-test-only:
+	@echo "Running Event Hubs Emulator tests (infrastructure must be running)..."
+	@$(GO) test -v -race -timeout 15m -run TestEventHubs ./test/integration/...
