@@ -90,7 +90,6 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 			Key:   key,
 			Value: value,
 		}
-		// Only set topic if specified (for dynamic topic mapping)
 		if topic != "" {
 			msg.Topic = topic
 		}
@@ -101,18 +100,15 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 		}
 		lastErr = err
 
-		// Check if context was cancelled
 		if ctx.Err() != nil {
 			return fmt.Errorf("failed to write message: %w", ctx.Err())
 		}
 
-		// Log retry attempt
 		c.logger.Debug("Retrying Kafka write",
 			zap.Int("attempt", i+1),
 			zap.Int("maxRetries", maxWriteRetries),
 			zap.Error(err))
 
-		// Wait before retrying
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("failed to write message: %w", ctx.Err())

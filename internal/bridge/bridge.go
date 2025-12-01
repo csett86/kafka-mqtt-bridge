@@ -170,7 +170,6 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 		case <-b.done:
 			return
 		default:
-			// Read from Kafka
 			msg, err := b.kafkaClient.ReadMessage(ctx)
 			if err != nil {
 				// Check if context was cancelled
@@ -196,7 +195,6 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 				mqttTopic = b.config.MQTT.DestTopic
 			}
 
-			// Publish to MQTT
 			if err := b.mqttClient.Publish(mqttTopic, msg.Value); err != nil {
 				b.logger.Error("Failed to publish message to MQTT", zap.Error(err))
 				continue
@@ -225,14 +223,12 @@ func (b *Bridge) startMQTTToKafka(ctx context.Context) error {
 					zap.String("mqttTopic", msg.Topic()))
 				return
 			}
-			// Write to the dynamically determined Kafka topic
 			if err := b.kafkaClient.WriteMessageToTopic(ctx, kafkaTopic, nil, msg.Payload()); err != nil {
 				b.logger.Error("Failed to write message to Kafka", zap.Error(err))
 				return
 			}
 		} else {
 			kafkaTopic = b.config.Kafka.DestTopic
-			// Write to the static destination topic
 			if err := b.kafkaClient.WriteMessage(ctx, nil, msg.Payload()); err != nil {
 				b.logger.Error("Failed to write message to Kafka", zap.Error(err))
 				return
@@ -247,7 +243,6 @@ func (b *Bridge) startMQTTToKafka(ctx context.Context) error {
 		)
 	}
 
-	// Subscribe to topics based on configuration
 	if b.mqttToKafkaMapper != nil && b.mqttToKafkaMapper.HasMappings() {
 		// Subscribe to all source patterns from topic mappings
 		for _, pattern := range b.mqttToKafkaMapper.GetSubscriptionPatterns() {
@@ -257,7 +252,6 @@ func (b *Bridge) startMQTTToKafka(ctx context.Context) error {
 			b.logger.Debug("Subscribed to MQTT topic pattern", zap.String("pattern", pattern))
 		}
 	} else if b.config.MQTT.SourceTopic != "" {
-		// Subscribe to static source topic
 		if err := b.mqttClient.Subscribe(b.config.MQTT.SourceTopic, handler); err != nil {
 			return fmt.Errorf("failed to subscribe to MQTT topic: %w", err)
 		}

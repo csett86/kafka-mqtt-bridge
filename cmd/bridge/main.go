@@ -17,7 +17,6 @@ func main() {
 	configPath := flag.String("config", "config/config.yaml", "Path to configuration file")
 	flag.Parse()
 
-	// Initialize logger
 	logger, err := zap.NewProduction()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
@@ -25,7 +24,6 @@ func main() {
 	}
 	defer logger.Sync()
 
-	// Load configuration
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
 		logger.Fatal("Failed to load configuration", zap.Error(err))
@@ -36,27 +34,22 @@ func main() {
 		zap.String("config", *configPath),
 	)
 
-	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Initialize bridge
 	b, err := bridge.New(cfg, logger)
 	if err != nil {
 		logger.Fatal("Failed to initialize bridge", zap.Error(err))
 	}
 
-	// Setup signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start bridge
 	errChan := make(chan error, 1)
 	go func() {
 		errChan <- b.Start(ctx)
 	}()
 
-	// Wait for signal or error
 	select {
 	case <-sigChan:
 		logger.Info("Received shutdown signal, gracefully shutting down")
@@ -65,7 +58,6 @@ func main() {
 		logger.Fatal("Bridge error", zap.Error(err))
 	}
 
-	// Give some time for graceful shutdown
 	b.Stop()
 	logger.Info("Bridge stopped successfully")
 }
