@@ -21,14 +21,21 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers bid
 
 ## Installation
 
-### Clone the Repository
+### Prebuild binaries
+
+Download the prebuilt binaries from the latest release:
+https://github.com/csett86/kafka-mqtt-bridge/releases/latest
+
+### Build from source
+
+1. Clone the Repository
 
 ```bash
 git clone https://github.com/csett86/kafka-mqtt-bridge.git
 cd kafka-mqtt-bridge
 ```
 
-### Build from Source
+2. Build from Source
 
 ```bash
 make build
@@ -76,6 +83,12 @@ bridge:
 
 ## Usage
 
+### Running the Binary
+
+```bash
+./bin/kafka-mqtt-bridge -config config/config.yaml
+```
+
 ### Running Locally
 
 ```bash
@@ -84,12 +97,6 @@ go run ./cmd/bridge/main.go
 
 # With custom config
 go run ./cmd/bridge/main.go -config config/local.yaml
-```
-
-### Running the Binary
-
-```bash
-./bin/kafka-mqtt-bridge -config config/config.yaml
 ```
 
 ## Development
