@@ -173,6 +173,8 @@ func TestEventHubsEmulatorProduceConsume(t *testing.T) {
 	t.Logf("Published message to Event Hubs Emulator topic %s: %s", eventHubsEmulatorTopic, testMessage)
 
 	// Read messages and look for our test message
+	// The readCtx timeout ensures we don't wait forever - ReadMessage will return
+	// context.DeadlineExceeded when the timeout is reached
 	readCtx, readCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer readCancel()
 
@@ -264,7 +266,8 @@ bridge:
 	t.Logf("Built bridge binary at: %s", binaryPath)
 
 	// Setup MQTT subscriber to receive messages from the bridge
-	receivedMessages := make(chan string, 100)
+	// Buffer size of 10 is sufficient for this test since we process messages as they arrive
+	receivedMessages := make(chan string, 10)
 	mqttClient := setupMQTTSubscriber(t, mqttTopic, receivedMessages)
 	defer mqttClient.Disconnect(250)
 
@@ -469,6 +472,8 @@ bridge:
 
 	// Wait for the message to appear on Event Hubs Emulator (forwarded by the bridge)
 	// Loop through messages until we find our specific test message
+	// The readCtx timeout ensures we don't wait forever - ReadMessage will return
+	// context.DeadlineExceeded when the timeout is reached
 	readCtx, readCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer readCancel()
 
