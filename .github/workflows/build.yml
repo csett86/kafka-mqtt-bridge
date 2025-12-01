@@ -68,7 +68,7 @@ jobs:
         go build -v -ldflags '-s -w' -o bin/kafka-mqtt-bridge-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }} ./cmd/bridge
 
     - name: Upload binary artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: kafka-mqtt-bridge-${{ matrix.os }}-${{ matrix.arch }}
         path: bin/kafka-mqtt-bridge-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
