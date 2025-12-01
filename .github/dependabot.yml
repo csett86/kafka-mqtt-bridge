@@ -1,6 +1,5 @@
 # Dependabot configuration for automated dependency updates
-# Updates GitHub Actions and Go dependencies
-# Note: "monthly" is the longest interval available in Dependabot
+# Updates GitHub Actions and Go dependencies every 6 months
 
 version: 2
 updates:
@@ -8,12 +7,12 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "semiannually"
     open-pull-requests-limit: 10
 
   # Go module dependencies
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "semiannually"
     open-pull-requests-limit: 10
