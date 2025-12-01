@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -28,28 +29,34 @@ func TestMQTTConnectionRecovery(t *testing.T) {
 
 	// Use unique topics for this test
 	testID := time.Now().UnixNano()
-	mqttTopic := fmt.Sprintf("mqtt/recovery/test/%d", testID)
-	kafkaTopic := fmt.Sprintf("test-mqtt-recovery-%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	mqttTopic := "mqtt/recovery/test/" + testIDStr
+	kafkaTopic := "test-mqtt-recovery-" + testIDStr
+
+	// Build explicit configuration values
+	kafkaGroupID := "test-mqtt-recovery-group-" + testIDStr
+	mqttClientID := "test-mqtt-recovery-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
 
 	// Create a temporary config file for the bridge (MQTT→Kafka)
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-mqtt-recovery-group-%d"
+  broker: "` + kafkaBrokers + `"
+  group_id: "` + kafkaGroupID + `"
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-mqtt-recovery-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
 
 bridge:
   name: "test-mqtt-recovery"
   log_level: "debug"
   buffer_size: 100
   mqtt_to_kafka:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, mqttTopic, kafkaTopic)
+    source_topic: "` + mqttTopic + `"
+    dest_topic: "` + kafkaTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -97,7 +104,7 @@ bridge:
 
 	// Phase 1: Verify initial message flow works
 	t.Log("Phase 1: Verifying initial message flow...")
-	testMessage1 := fmt.Sprintf("before-restart-message-%d", testID)
+	testMessage1 := "before-restart-message-" + testIDStr
 
 	mqttPublisher := setupMQTTPublisher(t)
 	token := mqttPublisher.Publish(mqttTopic, 1, false, []byte(testMessage1))
@@ -142,7 +149,7 @@ bridge:
 
 	// Phase 3: Verify message flow works after reconnection
 	t.Log("Phase 3: Verifying message flow after reconnection...")
-	testMessage2 := fmt.Sprintf("after-restart-message-%d", testID)
+	testMessage2 := "after-restart-message-" + testIDStr
 
 	mqttPublisher2 := setupMQTTPublisher(t)
 	token = mqttPublisher2.Publish(mqttTopic, 1, false, []byte(testMessage2))
@@ -182,28 +189,34 @@ func TestKafkaConnectionRecovery(t *testing.T) {
 
 	// Use unique topics for this test
 	testID := time.Now().UnixNano()
-	kafkaTopic := fmt.Sprintf("test-kafka-recovery-%d", testID)
-	mqttTopic := fmt.Sprintf("mqtt/kafka/recovery/%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	kafkaTopic := "test-kafka-recovery-" + testIDStr
+	mqttTopic := "mqtt/kafka/recovery/" + testIDStr
+
+	// Build explicit configuration values
+	kafkaGroupID := "test-kafka-recovery-group-" + testIDStr
+	mqttClientID := "test-kafka-recovery-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
 
 	// Create a temporary config file for the bridge (Kafka→MQTT)
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-kafka-recovery-group-%d"
+  broker: "` + kafkaBrokers + `"
+  group_id: "` + kafkaGroupID + `"
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-kafka-recovery-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
 
 bridge:
   name: "test-kafka-recovery"
   log_level: "debug"
   buffer_size: 100
   kafka_to_mqtt:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, kafkaTopic, mqttTopic)
+    source_topic: "` + kafkaTopic + `"
+    dest_topic: "` + mqttTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -259,7 +272,7 @@ bridge:
 
 	// Phase 1: Verify initial message flow works
 	t.Log("Phase 1: Verifying initial message flow...")
-	testMessage1 := fmt.Sprintf("before-kafka-restart-message-%d", testID)
+	testMessage1 := "before-kafka-restart-message-" + testIDStr
 
 	err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
 		Key:   []byte("test-key"),
@@ -308,7 +321,7 @@ bridge:
 	kafkaWriter2 := setupKafkaWriter(t, kafkaTopic)
 	defer kafkaWriter2.Close()
 
-	testMessage2 := fmt.Sprintf("after-kafka-restart-message-%d", testID)
+	testMessage2 := "after-kafka-restart-message-" + testIDStr
 
 	err = writeMessageWithRetry(ctx, kafkaWriter2, kafka.Message{
 		Key:   []byte("test-key-2"),

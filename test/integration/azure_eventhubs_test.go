@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -108,7 +109,8 @@ func TestEventHubsEmulatorProduceConsume(t *testing.T) {
 	defer cancel()
 
 	testID := time.Now().UnixNano()
-	testMessage := fmt.Sprintf("eventhubs-emulator-test-message-%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	testMessage := "eventhubs-emulator-test-message-" + testIDStr
 
 	// Create dialer for reader
 	dialer := &kafka.Dialer{
@@ -125,7 +127,7 @@ func TestEventHubsEmulatorProduceConsume(t *testing.T) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     []string{eventHubsEmulatorBroker},
 		Topic:       eventHubsEmulatorTopic,
-		GroupID:     fmt.Sprintf("test-emulator-group-%d", testID),
+		GroupID:     "test-emulator-group-" + testIDStr,
 		Dialer:      dialer,
 		StartOffset: kafka.FirstOffset, // Start from beginning for this consumer group
 		MinBytes:    1,
@@ -158,7 +160,7 @@ func TestEventHubsEmulatorProduceConsume(t *testing.T) {
 
 	// Write test message
 	err := writer.WriteMessages(ctx, kafka.Message{
-		Key:   []byte(fmt.Sprintf("test-key-%d", testID)),
+		Key:   []byte("test-key-" + testIDStr),
 		Value: []byte(testMessage),
 	})
 	if err != nil {
@@ -208,38 +210,44 @@ func TestEventHubsEmulatorToMQTTBridge(t *testing.T) {
 
 	// Use unique IDs for this test
 	testID := time.Now().UnixNano()
-	mqttTopic := fmt.Sprintf("mqtt/eventhubs/bridge/test/%d", testID)
-	testMessage := fmt.Sprintf("eventhubs-bridge-test-message-%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	mqttTopic := "mqtt/eventhubs/bridge/test/" + testIDStr
+	testMessage := "eventhubs-bridge-test-message-" + testIDStr
 
 	projectRoot := getProjectRoot()
 
+	// Build explicit configuration values
+	kafkaGroupID := "test-eventhubs-bridge-group-" + testIDStr
+	mqttClientID := "test-eventhubs-bridge-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
+
 	// Create a temporary config file for the bridge with Event Hubs Emulator configuration
 	// Note: No TLS for the emulator
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-eventhubs-bridge-group-%d"
+  broker: "` + eventHubsEmulatorBroker + `"
+  group_id: "` + kafkaGroupID + `"
   sasl:
     enabled: true
     mechanism: "PLAIN"
     username: "$ConnectionString"
-    password: "%s"
+    password: "` + eventHubsEmulatorConnectionString + `"
   tls:
     enabled: false
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-eventhubs-bridge-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
 
 bridge:
   name: "test-eventhubs-bridge"
   log_level: "debug"
   buffer_size: 100
   kafka_to_mqtt:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, eventHubsEmulatorBroker, testID, eventHubsEmulatorConnectionString, mqttBroker, mqttPort, testID, eventHubsEmulatorTopic, mqttTopic)
+    source_topic: "` + eventHubsEmulatorTopic + `"
+    dest_topic: "` + mqttTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -357,37 +365,43 @@ func TestMQTTToEventHubsEmulatorBridge(t *testing.T) {
 
 	// Use unique IDs for this test
 	testID := time.Now().UnixNano()
-	mqttTopic := fmt.Sprintf("mqtt/to-eventhubs/test/%d", testID)
-	testMessage := fmt.Sprintf("mqtt-to-eventhubs-test-message-%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	mqttTopic := "mqtt/to-eventhubs/test/" + testIDStr
+	testMessage := "mqtt-to-eventhubs-test-message-" + testIDStr
 
 	projectRoot := getProjectRoot()
 
+	// Build explicit configuration values
+	kafkaGroupID := "test-mqtt-to-eventhubs-group-" + testIDStr
+	mqttClientID := "test-mqtt-to-eventhubs-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
+
 	// Create a temporary config file for the bridge (MQTT→Event Hubs Emulator)
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-mqtt-to-eventhubs-group-%d"
+  broker: "` + eventHubsEmulatorBroker + `"
+  group_id: "` + kafkaGroupID + `"
   sasl:
     enabled: true
     mechanism: "PLAIN"
     username: "$ConnectionString"
-    password: "%s"
+    password: "` + eventHubsEmulatorConnectionString + `"
   tls:
     enabled: false
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-mqtt-to-eventhubs-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
 
 bridge:
   name: "test-mqtt-to-eventhubs"
   log_level: "debug"
   buffer_size: 100
   mqtt_to_kafka:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, eventHubsEmulatorBroker, testID, eventHubsEmulatorConnectionString, mqttBroker, mqttPort, testID, mqttTopic, eventHubsEmulatorTopic)
+    source_topic: "` + mqttTopic + `"
+    dest_topic: "` + eventHubsEmulatorTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -441,10 +455,11 @@ bridge:
 
 	// Setup Event Hubs Emulator reader to consume messages forwarded by the bridge
 	// Use FirstOffset with a unique consumer group to read all messages
+	kafkaReaderGroupID := "test-mqtt-to-eventhubs-read-group-" + testIDStr
 	kafkaReader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     []string{eventHubsEmulatorBroker},
 		Topic:       eventHubsEmulatorTopic,
-		GroupID:     fmt.Sprintf("test-mqtt-to-eventhubs-read-group-%d", testID),
+		GroupID:     kafkaReaderGroupID,
 		Dialer:      dialer,
 		StartOffset: kafka.FirstOffset,
 		MinBytes:    1,
