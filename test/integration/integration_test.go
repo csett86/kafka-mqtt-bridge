@@ -586,6 +586,270 @@ collectLoop:
 	t.Log("Successfully verified MQTT publish/subscribe round-trip")
 }
 
+// TestMQTTToKafkaBridgeWithQoS2 tests the bridge with QoS 2 (exactly once) delivery
+// This test verifies that:
+// 1. The bridge can be configured with QoS 2
+// 2. Messages are properly acknowledged after successful Kafka delivery
+// 3. The exactly-once semantics are maintained
+func TestMQTTToKafkaBridgeWithQoS2(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Use unique topics for this test
+	testID := time.Now().UnixNano()
+	mqttTopic := fmt.Sprintf("mqtt/qos2/test/%d", testID)
+	kafkaTopic := fmt.Sprintf("test-mqtt-qos2-%d", testID)
+	testMessages := []string{
+		fmt.Sprintf("qos2-message-1-%d", testID),
+		fmt.Sprintf("qos2-message-2-%d", testID),
+		fmt.Sprintf("qos2-message-3-%d", testID),
+	}
+
+	// Create a temporary config file for the bridge with QoS 2
+	configContent := fmt.Sprintf(`
+kafka:
+  broker: "%s"
+  dest_topic: "%s"
+  group_id: "test-mqtt-qos2-group-%d"
+
+mqtt:
+  broker: "%s"
+  port: %d
+  source_topic: "%s"
+  client_id: "test-mqtt-qos2-%d"
+  qos: 2
+  clean_session: false
+
+bridge:
+  name: "test-mqtt-qos2"
+  log_level: "debug"
+  buffer_size: 100
+`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+
+	// Create temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	t.Logf("Created config file at: %s", configPath)
+
+	// Build the bridge binary
+	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
+	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
+	buildCmd.Dir = getProjectRoot()
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
+	}
+
+	// Start the bridge binary
+	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
+	bridgeCmd.Dir = tmpDir
+	bridgeCmd.Stdout = os.Stdout
+	bridgeCmd.Stderr = os.Stderr
+
+	if err := bridgeCmd.Start(); err != nil {
+		t.Fatalf("Failed to start bridge: %v", err)
+	}
+
+	// Ensure we clean up the process
+	defer func() {
+		if bridgeCmd.Process != nil {
+			_ = bridgeCmd.Process.Signal(syscall.SIGTERM)
+			_ = bridgeCmd.Wait()
+		}
+	}()
+
+	t.Log("Bridge binary started with QoS 2, waiting for it to initialize...")
+
+	// Give bridge time to start and subscribe
+	time.Sleep(3 * time.Second)
+
+	// Setup Kafka reader to consume messages forwarded by the bridge
+	kafkaReader := setupKafkaReader(t, kafkaTopic)
+	defer kafkaReader.Close()
+
+	// Setup MQTT publisher with QoS 2
+	mqttPublisher := setupMQTTPublisherWithQoS(t, 2)
+	defer mqttPublisher.Disconnect(250)
+
+	// Publish messages to MQTT with QoS 2 - the bridge should forward them to Kafka
+	for i, msg := range testMessages {
+		token := mqttPublisher.Publish(mqttTopic, 2, false, []byte(msg))
+		if token.Wait() && token.Error() != nil {
+			t.Fatalf("Failed to publish message %d to MQTT with QoS 2: %v", i+1, token.Error())
+		}
+		t.Logf("Published message to MQTT topic %s with QoS 2: %s", mqttTopic, msg)
+	}
+
+	// Read and verify all messages from Kafka
+	received := make([]string, 0, len(testMessages))
+	readCtx, readCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer readCancel()
+
+	for i := 0; i < len(testMessages); i++ {
+		msg, err := kafkaReader.ReadMessage(readCtx)
+		if err != nil {
+			t.Fatalf("Failed to read message %d from Kafka: %v", i+1, err)
+		}
+		received = append(received, string(msg.Value))
+		t.Logf("Received bridged message on Kafka: %s", string(msg.Value))
+	}
+
+	// Verify all messages were received
+	if len(received) != len(testMessages) {
+		t.Fatalf("Expected %d messages, got %d", len(testMessages), len(received))
+	}
+
+	for i, expected := range testMessages {
+		if received[i] != expected {
+			t.Errorf("Message %d mismatch: got %q, want %q", i+1, received[i], expected)
+		}
+	}
+
+	t.Log("Successfully tested MQTT to Kafka bridge with QoS 2 (exactly-once)")
+}
+
+// TestKafkaToMQTTBridgeWithQoS2 tests the bridge for Kafka→MQTT direction with QoS 2
+// This test verifies that:
+// 1. The bridge can publish to MQTT with QoS 2
+// 2. Messages are delivered with exactly-once semantics
+func TestKafkaToMQTTBridgeWithQoS2(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Use unique topics for this test
+	testID := time.Now().UnixNano()
+	kafkaTopic := fmt.Sprintf("test-kafka-qos2-%d", testID)
+	mqttTopic := fmt.Sprintf("mqtt/kafka-qos2/test/%d", testID)
+	testMessages := []string{
+		fmt.Sprintf("kafka-qos2-message-1-%d", testID),
+		fmt.Sprintf("kafka-qos2-message-2-%d", testID),
+		fmt.Sprintf("kafka-qos2-message-3-%d", testID),
+	}
+
+	// Create a temporary config file for the bridge with QoS 2
+	configContent := fmt.Sprintf(`
+kafka:
+  broker: "%s"
+  source_topic: "%s"
+  group_id: "test-kafka-qos2-group-%d"
+
+mqtt:
+  broker: "%s"
+  port: %d
+  dest_topic: "%s"
+  client_id: "test-kafka-qos2-%d"
+  qos: 2
+  clean_session: false
+
+bridge:
+  name: "test-kafka-qos2"
+  log_level: "debug"
+  buffer_size: 100
+`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttPort, mqttTopic, testID)
+
+	// Create temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	t.Logf("Created config file at: %s", configPath)
+
+	// Build the bridge binary
+	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
+	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
+	buildCmd.Dir = getProjectRoot()
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
+	}
+
+	// Setup MQTT subscriber to receive messages from the bridge with QoS 2
+	receivedMessages := make(chan string, len(testMessages)+5)
+	mqttClient := setupMQTTSubscriberWithQoS(t, mqttTopic, 2, receivedMessages)
+	defer mqttClient.Disconnect(250)
+
+	// Give subscriber time to be ready
+	time.Sleep(500 * time.Millisecond)
+
+	// Setup Kafka writer and publish messages BEFORE starting bridge
+	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
+	defer kafkaWriter.Close()
+
+	// Publish messages to Kafka
+	for i, msg := range testMessages {
+		retries := 10
+		if i > 0 {
+			retries = 3
+		}
+		err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+			Key:   []byte(fmt.Sprintf("key-%d", i)),
+			Value: []byte(msg),
+		}, retries)
+		if err != nil {
+			t.Fatalf("Failed to write message %d to Kafka: %v", i, err)
+		}
+		t.Logf("Published message to Kafka: %s", msg)
+	}
+
+	// Start the bridge binary
+	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
+	bridgeCmd.Dir = tmpDir
+	bridgeCmd.Stdout = os.Stdout
+	bridgeCmd.Stderr = os.Stderr
+
+	if err := bridgeCmd.Start(); err != nil {
+		t.Fatalf("Failed to start bridge: %v", err)
+	}
+
+	// Ensure we clean up the process
+	defer func() {
+		if bridgeCmd.Process != nil {
+			_ = bridgeCmd.Process.Signal(syscall.SIGTERM)
+			_ = bridgeCmd.Wait()
+		}
+	}()
+
+	t.Log("Bridge binary started with QoS 2, waiting for it to initialize...")
+
+	// Give bridge time to start and process
+	time.Sleep(5 * time.Second)
+
+	// Collect messages received on MQTT
+	received := make([]string, 0, len(testMessages))
+	timeout := time.After(15 * time.Second)
+
+collectLoop:
+	for {
+		select {
+		case msg := <-receivedMessages:
+			received = append(received, msg)
+			t.Logf("Received bridged message on MQTT with QoS 2: %s", msg)
+			if len(received) >= len(testMessages) {
+				break collectLoop
+			}
+		case <-timeout:
+			break collectLoop
+		}
+	}
+
+	// Verify all messages were received
+	if len(received) != len(testMessages) {
+		t.Fatalf("Expected %d messages, got %d", len(testMessages), len(received))
+	}
+
+	for i, expected := range testMessages {
+		if received[i] != expected {
+			t.Errorf("Message %d mismatch: got %q, want %q", i+1, received[i], expected)
+		}
+	}
+
+	t.Log("Successfully tested Kafka to MQTT bridge with QoS 2 (exactly-once)")
+}
+
 // Helper functions
 
 func setupKafkaWriter(t *testing.T, topic string) *kafka.Writer {
@@ -671,6 +935,58 @@ func setupMQTTSubscriber(t *testing.T, topic string, messages chan<- string) mqt
 	})
 	if token.Wait() && token.Error() != nil {
 		t.Fatalf("Failed to subscribe to topic %s: %v", topic, token.Error())
+	}
+
+	return client
+}
+
+// setupMQTTPublisherWithQoS creates an MQTT publisher with a specific QoS level
+func setupMQTTPublisherWithQoS(t *testing.T, qos byte) mqtt.Client {
+	t.Helper()
+	opts := mqtt.NewClientOptions()
+	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", mqttBroker, mqttPort))
+	opts.SetClientID(fmt.Sprintf("test-publisher-qos%d-%d", qos, time.Now().UnixNano()))
+	opts.SetConnectTimeout(10 * time.Second)
+	// For QoS > 0, we need clean session false to maintain session state
+	if qos > 0 {
+		opts.SetCleanSession(false)
+	}
+
+	client := mqtt.NewClient(opts)
+	token := client.Connect()
+	if token.Wait() && token.Error() != nil {
+		t.Fatalf("Failed to connect MQTT publisher with QoS %d: %v", qos, token.Error())
+	}
+	return client
+}
+
+// setupMQTTSubscriberWithQoS creates an MQTT subscriber with a specific QoS level
+func setupMQTTSubscriberWithQoS(t *testing.T, topic string, qos byte, messages chan<- string) mqtt.Client {
+	t.Helper()
+	opts := mqtt.NewClientOptions()
+	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", mqttBroker, mqttPort))
+	opts.SetClientID(fmt.Sprintf("test-subscriber-qos%d-%d", qos, time.Now().UnixNano()))
+	opts.SetConnectTimeout(10 * time.Second)
+	// For QoS > 0, we need clean session false to maintain session state
+	if qos > 0 {
+		opts.SetCleanSession(false)
+	}
+
+	client := mqtt.NewClient(opts)
+	token := client.Connect()
+	if token.Wait() && token.Error() != nil {
+		t.Fatalf("Failed to connect MQTT subscriber with QoS %d: %v", qos, token.Error())
+	}
+
+	token = client.Subscribe(topic, qos, func(c mqtt.Client, m mqtt.Message) {
+		select {
+		case messages <- string(m.Payload()):
+		default:
+			// Channel full, drop message
+		}
+	})
+	if token.Wait() && token.Error() != nil {
+		t.Fatalf("Failed to subscribe to topic %s with QoS %d: %v", topic, qos, token.Error())
 	}
 
 	return client

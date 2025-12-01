@@ -72,16 +72,23 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 		}
 	}
 
-	// Initialize MQTT client with TLS support
-	mqttClient, err := mqtt.NewClientWithTLS(
-		cfg.MQTT.Broker,
-		cfg.MQTT.Port,
-		cfg.MQTT.Username,
-		cfg.MQTT.Password,
-		cfg.MQTT.ClientID,
-		tlsConfig,
-		logger,
-	)
+	// Determine CleanSession value (default: false when QoS > 0, true otherwise)
+	cleanSession := cfg.MQTT.QoS == 0
+	if cfg.MQTT.CleanSession != nil {
+		cleanSession = *cfg.MQTT.CleanSession
+	}
+
+	// Initialize MQTT client with QoS and CleanSession support
+	mqttClient, err := mqtt.NewClientWithConfig(mqtt.ClientConfig{
+		Broker:       cfg.MQTT.Broker,
+		Port:         cfg.MQTT.Port,
+		Username:     cfg.MQTT.Username,
+		Password:     cfg.MQTT.Password,
+		ClientID:     cfg.MQTT.ClientID,
+		TLS:          tlsConfig,
+		QoS:          byte(cfg.MQTT.QoS),
+		CleanSession: cleanSession,
+	}, logger)
 	if err != nil {
 		kafkaClient.Close()
 		return nil, fmt.Errorf("failed to create MQTT client: %w", err)
@@ -98,7 +105,10 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 
 // Start begins the bridge operation
 func (b *Bridge) Start(ctx context.Context) error {
-	b.logger.Info("Starting bridge", zap.String("name", b.config.Bridge.Name))
+	b.logger.Info("Starting bridge",
+		zap.String("name", b.config.Bridge.Name),
+		zap.Int("mqttQoS", b.config.MQTT.QoS),
+	)
 
 	var wg sync.WaitGroup
 
@@ -114,7 +124,8 @@ func (b *Bridge) Start(ctx context.Context) error {
 		}()
 		b.logger.Info("Started Kafka→MQTT bridge",
 			zap.String("kafkaTopic", b.config.Kafka.SourceTopic),
-			zap.String("mqttTopic", b.config.MQTT.DestTopic))
+			zap.String("mqttTopic", b.config.MQTT.DestTopic),
+			zap.Int("qos", b.config.MQTT.QoS))
 	}
 
 	// Start MQTT→Kafka bridging if configured
@@ -126,7 +137,8 @@ func (b *Bridge) Start(ctx context.Context) error {
 		}
 		b.logger.Info("Started MQTT→Kafka bridge",
 			zap.String("mqttTopic", b.config.MQTT.SourceTopic),
-			zap.String("kafkaTopic", b.config.Kafka.DestTopic))
+			zap.String("kafkaTopic", b.config.Kafka.DestTopic),
+			zap.Int("qos", b.config.MQTT.QoS))
 	}
 
 	// Wait for context cancellation or done signal
@@ -191,14 +203,21 @@ func (b *Bridge) startMQTTToKafka(ctx context.Context) error {
 		kafkaTopic := b.config.Kafka.DestTopic
 		if err := b.kafkaClient.WriteMessage(ctx, nil, msg.Payload()); err != nil {
 			b.logger.Error("Failed to write message to Kafka", zap.Error(err))
+			// Don't acknowledge the message - it will be redelivered for QoS > 0
 			return
 		}
+
+		// Acknowledge the MQTT message after successful Kafka delivery
+		// This is crucial for QoS 1 (at-least-once) and QoS 2 (exactly-once) semantics
+		// For QoS 0 (at-most-once), this is a no-op
+		msg.Ack()
 
 		b.logger.Debug("Message bridged",
 			zap.String("from", "mqtt"),
 			zap.String("mqttTopic", msg.Topic()),
 			zap.String("kafkaTopic", kafkaTopic),
 			zap.Int("size", len(msg.Payload())),
+			zap.Uint8("qos", msg.Qos()),
 		)
 	}
 

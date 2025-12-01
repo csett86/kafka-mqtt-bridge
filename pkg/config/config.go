@@ -61,7 +61,9 @@ type MQTTConfig struct {
 	SourceTopics []string      `yaml:"source_topics"` // Multiple topics to subscribe to (for MQTT→Kafka)
 	DestTopic    string        `yaml:"dest_topic"`    // Topic to publish to (for Kafka→MQTT)
 	ClientID     string        `yaml:"client_id"`
-	TLS          MQTTTLSConfig `yaml:"tls"` // TLS configuration
+	QoS          int           `yaml:"qos"`           // QoS level for MQTT operations (0, 1, or 2). Default: 1
+	CleanSession *bool         `yaml:"clean_session"` // CleanSession flag. Default: false when QoS > 0, true otherwise
+	TLS          MQTTTLSConfig `yaml:"tls"`           // TLS configuration
 }
 
 // BridgeConfig contains bridge-specific settings
@@ -92,6 +94,15 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.MQTT.ClientID == "" {
 		cfg.MQTT.ClientID = "kafka-mqtt-bridge"
+	}
+	// Validate and set default QoS (default: 1 for at-least-once delivery)
+	if cfg.MQTT.QoS < 0 || cfg.MQTT.QoS > 2 {
+		cfg.MQTT.QoS = 1
+	}
+	// Set CleanSession default: false when QoS > 0 to support session persistence
+	if cfg.MQTT.CleanSession == nil {
+		cleanSession := cfg.MQTT.QoS == 0
+		cfg.MQTT.CleanSession = &cleanSession
 	}
 	if cfg.Bridge.BufferSize == 0 {
 		cfg.Bridge.BufferSize = 100
