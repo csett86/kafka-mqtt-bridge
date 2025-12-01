@@ -72,11 +72,9 @@ bridge:
   name: "kafka-mqtt-bridge"
   log_level: "info"
   buffer_size: 100
-  # MQTT to Kafka bridging - messages from MQTT source_topic are forwarded to Kafka dest_topic
   mqtt_to_kafka:
     source_topic: "mqtt/events"
     dest_topic: "mqtt-to-kafka"
-  # Kafka to MQTT bridging - messages from Kafka source_topic are forwarded to MQTT dest_topic
   kafka_to_mqtt:
     source_topic: "events"
     dest_topic: "kafka/events"
