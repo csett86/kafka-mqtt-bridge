@@ -195,7 +195,6 @@ func TestKafkaToMQTTBridgeWithAzureEventHubs(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  source_topic: "%s"
   group_id: "test-azure-bridge-group-%d"
   sasl:
     enabled: true
@@ -209,14 +208,16 @@ kafka:
 mqtt:
   broker: "%s"
   port: %d
-  dest_topic: "%s"
   client_id: "test-azure-bridge-%d"
 
 bridge:
   name: "test-azure-bridge"
   log_level: "debug"
   buffer_size: 100
-`, azureEventHubsBroker, azureEventHubsTopic, testID, azureEventHubsConnectionString, mqttBroker, mqttPort, mqttTopic, testID)
+  kafka_to_mqtt:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, azureEventHubsBroker, testID, azureEventHubsConnectionString, mqttBroker, mqttPort, testID, azureEventHubsTopic, mqttTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -340,7 +341,6 @@ func TestMQTTToAzureEventHubsBridge(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  dest_topic: "%s"
   group_id: "test-mqtt-to-azure-group-%d"
   sasl:
     enabled: true
@@ -354,14 +354,16 @@ kafka:
 mqtt:
   broker: "%s"
   port: %d
-  source_topic: "%s"
   client_id: "test-mqtt-to-azure-%d"
 
 bridge:
   name: "test-mqtt-to-azure"
   log_level: "debug"
   buffer_size: 100
-`, azureEventHubsBroker, azureEventHubsTopic, testID, azureEventHubsConnectionString, mqttBroker, mqttPort, mqttTopic, testID)
+  mqtt_to_kafka:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, azureEventHubsBroker, testID, azureEventHubsConnectionString, mqttBroker, mqttPort, testID, mqttTopic, azureEventHubsTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()

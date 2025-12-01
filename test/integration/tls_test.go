@@ -144,13 +144,11 @@ func TestKafkaToMQTTBridgeWithTLS(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  source_topic: "%s"
   group_id: "test-tls-bridge-group-%d"
 
 mqtt:
   broker: "%s"
   port: %d
-  dest_topic: "%s"
   client_id: "test-tls-bridge-%d"
   tls:
     enabled: true
@@ -162,7 +160,10 @@ bridge:
   name: "test-tls-bridge"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttTLSPort, mqttTopic, testID, caFile, certFile, keyFile)
+  kafka_to_mqtt:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, kafkaBrokers, testID, mqttBroker, mqttTLSPort, testID, caFile, certFile, keyFile, kafkaTopic, mqttTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -282,13 +283,11 @@ func TestMQTTToKafkaBridgeWithTLS(t *testing.T) {
 	configContent := fmt.Sprintf(`
 kafka:
   broker: "%s"
-  dest_topic: "%s"
   group_id: "test-tls-mqtt-to-kafka-group-%d"
 
 mqtt:
   broker: "%s"
   port: %d
-  source_topic: "%s"
   client_id: "test-tls-mqtt-to-kafka-%d"
   tls:
     enabled: true
@@ -300,7 +299,10 @@ bridge:
   name: "test-tls-mqtt-to-kafka"
   log_level: "debug"
   buffer_size: 100
-`, kafkaBrokers, kafkaTopic, testID, mqttBroker, mqttTLSPort, mqttTopic, testID, caFile, certFile, keyFile)
+  mqtt_to_kafka:
+    source_topic: "%s"
+    dest_topic: "%s"
+`, kafkaBrokers, testID, mqttBroker, mqttTLSPort, testID, caFile, certFile, keyFile, mqttTopic, kafkaTopic)
 
 	// Create temporary config file
 	tmpDir := t.TempDir()

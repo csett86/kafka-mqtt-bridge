@@ -1,10 +1,6 @@
 # Kafka Configuration
 kafka:
   broker: "localhost:9092"
-  # Topic to read from for Kafka→MQTT bridging (static mode)
-  source_topic: "events"
-  # Topic to write to for MQTT→Kafka bridging (static mode)
-  dest_topic: "mqtt-to-kafka"
   group_id: "kafka-mqtt-bridge"
   
   # SASL Authentication (required for Azure Event Hubs)
@@ -27,15 +23,6 @@ kafka:
   #   # cert_file: "/path/to/client.crt"  # Optional: For mutual TLS
   #   # key_file: "/path/to/client.key"   # Optional: For mutual TLS
   #   insecure_skip_verify: false
-  
-  # Dynamic topic mappings for MQTT→Kafka bridging (alternative to dest_topic)
-  # Supports wildcards: + (single level), # (multi-level), * (single level alias)
-  # Use {1}, {2}, etc. to reference captured wildcard segments in target
-  # topic_mappings:
-  #   - source: "sensors/+/data"
-  #     target: "kafka-sensors-{1}"
-  #   - source: "devices/#"
-  #     target: "kafka-devices"
 
 # MQTT Configuration
 mqtt:
@@ -43,10 +30,6 @@ mqtt:
   port: 1883
   username: ""
   password: ""
-  # Topic to subscribe to for MQTT→Kafka bridging (static mode)
-  source_topic: "mqtt/events"
-  # Topic to publish to for Kafka→MQTT bridging (static mode)
-  dest_topic: "kafka/events"
   client_id: "kafka-mqtt-bridge"
   
   # QoS level for MQTT operations (0, 1, or 2). Default: 1
@@ -61,13 +44,6 @@ mqtt:
   # When false, the broker stores subscriptions and queued messages for the client
   # This is important for QoS > 0 to ensure message delivery after reconnection
   # clean_session: false
-  
-  # Dynamic topic mappings for Kafka→MQTT bridging (alternative to dest_topic)
-  # Supports wildcards: + (single level), # (multi-level), * (single level alias)
-  # Use {1}, {2}, etc. to reference captured wildcard segments in target
-  # topic_mappings:
-  #   - source: "kafka-events-*"
-  #     target: "mqtt/{1}/events"
   
   # TLS Configuration for secure MQTT connections
   # tls:
@@ -86,3 +62,15 @@ bridge:
   name: "kafka-mqtt-bridge"
   log_level: "info"
   buffer_size: 100
+  
+  # MQTT to Kafka bridging configuration
+  # Messages from MQTT source_topic will be forwarded to Kafka dest_topic
+  mqtt_to_kafka:
+    source_topic: "mqtt/events"
+    dest_topic: "mqtt-to-kafka"
+  
+  # Kafka to MQTT bridging configuration
+  # Messages from Kafka source_topic will be forwarded to MQTT dest_topic
+  kafka_to_mqtt:
+    source_topic: "events"
+    dest_topic: "kafka/events"
