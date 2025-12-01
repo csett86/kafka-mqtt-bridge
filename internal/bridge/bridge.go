@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	pahomqtt "github.com/eclipse/paho.mqtt.golang"
 
@@ -11,6 +12,13 @@ import (
 	"github.com/csett86/kafka-mqtt-bridge/internal/mqtt"
 	"github.com/csett86/kafka-mqtt-bridge/pkg/config"
 	"go.uber.org/zap"
+)
+
+const (
+	// commitTimeout is the timeout for committing offsets after successful MQTT delivery.
+	// This timeout is used independently of the main context to ensure commits complete
+	// even during graceful shutdown.
+	commitTimeout = 30 * time.Second
 )
 
 // Bridge manages the connection between Kafka and MQTT
@@ -180,12 +188,18 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 				continue
 			}
 
-			// Commit the offset only after successful MQTT delivery
-			if err := b.kafkaClient.CommitMessage(ctx, msg); err != nil {
-				b.logger.Error("Failed to commit message after MQTT delivery", zap.Error(err))
-				// Message was delivered to MQTT but commit failed
-				// On restart, it may be redelivered but that's safer than losing messages
-			}
+			// Commit the offset only after successful MQTT delivery.
+			// Use a separate context with timeout to ensure commits complete even during
+			// graceful shutdown when the main context is canceled.
+			func() {
+				commitCtx, commitCancel := context.WithTimeout(context.Background(), commitTimeout)
+				defer commitCancel()
+				if err := b.kafkaClient.CommitMessage(commitCtx, msg); err != nil {
+					b.logger.Error("Failed to commit message after MQTT delivery", zap.Error(err))
+					// Message was delivered to MQTT but commit failed
+					// On restart, it may be redelivered but that's safer than losing messages
+				}
+			}()
 
 			b.logger.Debug("Message bridged",
 				zap.String("from", "kafka"),
