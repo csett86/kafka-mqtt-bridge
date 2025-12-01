@@ -5,10 +5,10 @@ package integration
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -86,7 +86,8 @@ func TestAzureEventHubsProduceConsume(t *testing.T) {
 	defer cancel()
 
 	testID := time.Now().UnixNano()
-	testMessage := fmt.Sprintf("azure-eventhubs-test-message-%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	testMessage := "azure-eventhubs-test-message-" + testIDStr
 
 	// Create transport with SASL PLAIN authentication
 	transport := &kafka.Transport{
@@ -115,7 +116,7 @@ func TestAzureEventHubsProduceConsume(t *testing.T) {
 
 	// Write test message
 	err := writer.WriteMessages(ctx, kafka.Message{
-		Key:   []byte(fmt.Sprintf("test-key-%d", testID)),
+		Key:   []byte("test-key-" + testIDStr),
 		Value: []byte(testMessage),
 	})
 	if err != nil {
@@ -141,7 +142,7 @@ func TestAzureEventHubsProduceConsume(t *testing.T) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     []string{azureEventHubsBroker},
 		Topic:       azureEventHubsTopic,
-		GroupID:     fmt.Sprintf("test-azure-group-%d", testID),
+		GroupID:     "test-azure-group-" + testIDStr,
 		Dialer:      dialer,
 		StartOffset: kafka.LastOffset, // Start from end to get our test message
 		MinBytes:    1,
@@ -186,38 +187,44 @@ func TestKafkaToMQTTBridgeWithAzureEventHubs(t *testing.T) {
 
 	// Use unique IDs for this test
 	testID := time.Now().UnixNano()
-	mqttTopic := fmt.Sprintf("mqtt/azure/bridge/test/%d", testID)
-	testMessage := fmt.Sprintf("azure-bridge-test-message-%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	mqttTopic := "mqtt/azure/bridge/test/" + testIDStr
+	testMessage := "azure-bridge-test-message-" + testIDStr
 
 	projectRoot := getProjectRoot()
 
+	// Build explicit configuration values
+	kafkaGroupID := "test-azure-bridge-group-" + testIDStr
+	mqttClientID := "test-azure-bridge-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
+
 	// Create a temporary config file for the bridge with Azure Event Hubs configuration
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-azure-bridge-group-%d"
+  broker: "` + azureEventHubsBroker + `"
+  group_id: "` + kafkaGroupID + `"
   sasl:
     enabled: true
     mechanism: "PLAIN"
     username: "$ConnectionString"
-    password: "%s"
+    password: "` + azureEventHubsConnectionString + `"
   tls:
     enabled: true
     insecure_skip_verify: false
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-azure-bridge-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
 
 bridge:
   name: "test-azure-bridge"
   log_level: "debug"
   buffer_size: 100
   kafka_to_mqtt:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, azureEventHubsBroker, testID, azureEventHubsConnectionString, mqttBroker, mqttPort, testID, azureEventHubsTopic, mqttTopic)
+    source_topic: "` + azureEventHubsTopic + `"
+    dest_topic: "` + mqttTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -332,38 +339,44 @@ func TestMQTTToAzureEventHubsBridge(t *testing.T) {
 
 	// Use unique IDs for this test
 	testID := time.Now().UnixNano()
-	mqttTopic := fmt.Sprintf("mqtt/to-azure/test/%d", testID)
-	testMessage := fmt.Sprintf("mqtt-to-azure-test-message-%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	mqttTopic := "mqtt/to-azure/test/" + testIDStr
+	testMessage := "mqtt-to-azure-test-message-" + testIDStr
 
 	projectRoot := getProjectRoot()
 
+	// Build explicit configuration values
+	kafkaGroupID := "test-mqtt-to-azure-group-" + testIDStr
+	mqttClientID := "test-mqtt-to-azure-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
+
 	// Create a temporary config file for the bridge (MQTT→Azure Event Hubs)
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-mqtt-to-azure-group-%d"
+  broker: "` + azureEventHubsBroker + `"
+  group_id: "` + kafkaGroupID + `"
   sasl:
     enabled: true
     mechanism: "PLAIN"
     username: "$ConnectionString"
-    password: "%s"
+    password: "` + azureEventHubsConnectionString + `"
   tls:
     enabled: true
     insecure_skip_verify: false
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-mqtt-to-azure-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
 
 bridge:
   name: "test-mqtt-to-azure"
   log_level: "debug"
   buffer_size: 100
   mqtt_to_kafka:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, azureEventHubsBroker, testID, azureEventHubsConnectionString, mqttBroker, mqttPort, testID, mqttTopic, azureEventHubsTopic)
+    source_topic: "` + mqttTopic + `"
+    dest_topic: "` + azureEventHubsTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -419,10 +432,11 @@ bridge:
 	}
 
 	// Setup Azure Event Hubs reader to consume messages forwarded by the bridge
+	kafkaReaderGroupID := "test-mqtt-to-azure-read-group-" + testIDStr
 	kafkaReader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     []string{azureEventHubsBroker},
 		Topic:       azureEventHubsTopic,
-		GroupID:     fmt.Sprintf("test-mqtt-to-azure-read-group-%d", testID),
+		GroupID:     kafkaReaderGroupID,
 		Dialer:      dialer,
 		StartOffset: kafka.LastOffset,
 		MinBytes:    1,
