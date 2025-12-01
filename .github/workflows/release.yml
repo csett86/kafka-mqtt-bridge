@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.21'
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run tests
+      run: go test -v -race ./...
+
+  build:
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-latest
+          - os: windows
+            arch: amd64
+            runner: windows-latest
+          - os: windows
+            arch: arm64
+            runner: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.21'
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build static binary
+      env:
+        GOOS: ${{ matrix.os }}
+        GOARCH: ${{ matrix.arch }}
+        CGO_ENABLED: 0
+      shell: bash
+      run: |
+        mkdir -p bin
+        if [ "${{ matrix.os }}" = "windows" ]; then
+          go build -v -ldflags '-s -w' -o bin/kafka-mqtt-bridge-${{ matrix.os }}-${{ matrix.arch }}.exe ./cmd/bridge
+        else
+          go build -v -ldflags '-s -w' -o bin/kafka-mqtt-bridge-${{ matrix.os }}-${{ matrix.arch }} ./cmd/bridge
+        fi
+
+    - name: Upload release asset
+      uses: softprops/action-gh-release@v2
+      with:
+        files: bin/kafka-mqtt-bridge-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
