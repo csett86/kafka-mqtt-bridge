@@ -2,13 +2,8 @@
 // This file contains tests for Azure Event Hubs Emulator support.
 // The tests use the Azure Event Hubs Emulator which provides Kafka protocol compatibility.
 //
-// To run these tests:
-//  1. Start the Event Hubs Emulator infrastructure:
-//     docker compose -f docker-compose.eventhubs.yml up -d
-//  2. Run the tests:
-//     go test -v -run TestEventHubsEmulator ./test/integration/...
-//  3. Clean up:
-//     docker compose -f docker-compose.eventhubs.yml down
+// These tests run as part of the integration test suite when the infrastructure is started
+// with docker compose -f docker-compose.integration.yml up -d
 package integration
 
 import (
@@ -26,10 +21,10 @@ import (
 )
 
 // Azure Event Hubs Emulator configuration
-// These defaults work with docker-compose.eventhubs.yml
+// These defaults work with docker-compose.integration.yml (Event Hubs on port 9093)
 var (
-	// Event Hubs Emulator Kafka broker endpoint
-	eventHubsEmulatorBroker = getEnv("TEST_EVENTHUBS_BROKER", "localhost:9092")
+	// Event Hubs Emulator Kafka broker endpoint (port 9093 to avoid conflict with regular Kafka)
+	eventHubsEmulatorBroker = getEnv("TEST_EVENTHUBS_BROKER", "localhost:9093")
 	// Event Hubs Emulator connection string (used for SASL authentication)
 	// The SAS_KEY_VALUE is a placeholder that works with the emulator
 	eventHubsEmulatorConnectionString = getEnv("TEST_EVENTHUBS_CONNECTION_STRING",

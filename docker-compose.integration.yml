@@ -1,5 +1,5 @@
 # Docker Compose file for integration testing
-# Provides Kafka and MQTT (Mosquitto) brokers for testing
+# Provides Kafka, Azure Event Hubs Emulator, and MQTT (Mosquitto) brokers for testing
 
 services:
   zookeeper:
@@ -34,6 +34,42 @@ services:
       KAFKA_REPLICA_FETCH_MAX_BYTES: 2097152
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # Azurite is a dependency for the Event Hubs Emulator
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "10000"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # Azure Event Hubs Emulator with Kafka support (on port 9093 to avoid conflict with Kafka)
+  eventhubs-emulator:
+    image: mcr.microsoft.com/azure-messaging/eventhubs-emulator:latest
+    depends_on:
+      azurite:
+        condition: service_healthy
+    ports:
+      - "5672:5672"   # AMQP
+      - "9093:9092"   # Kafka (mapped to 9093 on host to avoid conflict)
+    environment:
+      BLOB_SERVER: azurite
+      METADATA_SERVER: azurite
+      ACCEPT_EULA: Y
+    volumes:
+      - ./test/eventhubs-emulator-config.json:/Eventhubs_Emulator/ConfigFiles/Config.json:ro
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-c", "timeout 1 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9092' 2>/dev/null"]
       interval: 10s
       timeout: 10s
       retries: 10
