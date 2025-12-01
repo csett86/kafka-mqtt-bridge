@@ -95,7 +95,6 @@ func patternToRegex(pattern string) (*regexp.Regexp, error) {
 	// # -> multi-level capture group (including slashes)
 	escaped = strings.ReplaceAll(escaped, hashPlaceholder, `(.*)`)
 
-	// Anchor the pattern
 	escaped = "^" + escaped + "$"
 
 	return regexp.Compile(escaped)

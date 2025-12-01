@@ -223,7 +223,6 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 			Key:   key,
 			Value: value,
 		}
-		// Only set topic if specified (for dynamic topic mapping)
 		if topic != "" {
 			msg.Topic = topic
 		}
@@ -234,7 +233,6 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 		}
 		lastErr = err
 
-		// Check if context was cancelled
 		if ctx.Err() != nil {
 			return fmt.Errorf("failed to write message: %w", ctx.Err())
 		}
@@ -246,7 +244,6 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 			zap.Duration("backoff", backoff),
 			zap.Error(err))
 
-		// Wait before retrying with exponential backoff
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("failed to write message: %w", ctx.Err())

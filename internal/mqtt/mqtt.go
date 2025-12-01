@@ -62,7 +62,6 @@ func NewClientWithTLS(broker string, port int, username string, password string,
 		opts.SetPassword(password)
 	}
 
-	// Configure TLS if enabled
 	if tlsConfig != nil && tlsConfig.Enabled {
 		tlsCfg, err := createTLSConfig(tlsConfig)
 		if err != nil {
@@ -148,7 +147,6 @@ func createTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 		InsecureSkipVerify: cfg.InsecureSkipVerify,
 	}
 
-	// Load CA certificate if provided
 	if cfg.CAFile != "" {
 		caCert, err := os.ReadFile(cfg.CAFile)
 		if err != nil {
@@ -161,7 +159,7 @@ func createTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 		tlsCfg.RootCAs = caCertPool
 	}
 
-	// Load client certificate and key if provided (for mutual TLS)
+	// Load client certificate and key for mutual TLS
 	if cfg.CertFile != "" && cfg.KeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 		if err != nil {
