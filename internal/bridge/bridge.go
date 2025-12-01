@@ -72,6 +72,12 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 		}
 	}
 
+	// Determine CleanSession value (default: false when QoS > 0, true otherwise)
+	cleanSession := cfg.MQTT.QoS == 0
+	if cfg.MQTT.CleanSession != nil {
+		cleanSession = *cfg.MQTT.CleanSession
+	}
+
 	// Initialize MQTT client with QoS and CleanSession support
 	mqttClient, err := mqtt.NewClientWithConfig(mqtt.ClientConfig{
 		Broker:       cfg.MQTT.Broker,
@@ -81,7 +87,7 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 		ClientID:     cfg.MQTT.ClientID,
 		TLS:          tlsConfig,
 		QoS:          byte(cfg.MQTT.QoS),
-		CleanSession: *cfg.MQTT.CleanSession,
+		CleanSession: cleanSession,
 	}, logger)
 	if err != nil {
 		kafkaClient.Close()
