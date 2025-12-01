@@ -182,11 +182,13 @@ func (c *Client) restoreSubscriptions() {
 }
 
 // createTLSConfig creates a tls.Config from TLSConfig
+// If no CA file is specified, the system's trusted CA certificates are used
 func createTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 	tlsCfg := &tls.Config{
 		InsecureSkipVerify: cfg.InsecureSkipVerify,
 	}
 
+	// Load custom CA certificate if provided; otherwise use system CA certificates
 	if cfg.CAFile != "" {
 		caCert, err := os.ReadFile(cfg.CAFile)
 		if err != nil {

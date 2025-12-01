@@ -25,7 +25,7 @@ type KafkaSASLConfig struct {
 // KafkaTLSConfig contains TLS settings for Kafka connection
 type KafkaTLSConfig struct {
 	Enabled            bool   `yaml:"enabled"`              // Enable TLS connection
-	CAFile             string `yaml:"ca_file"`              // Path to CA certificate file (optional)
+	CAFile             string `yaml:"ca_file"`              // Path to CA certificate file (optional; if not set, system CA certificates are used)
 	CertFile           string `yaml:"cert_file"`            // Path to client certificate file (optional, for mutual TLS)
 	KeyFile            string `yaml:"key_file"`             // Path to client private key file (optional, for mutual TLS)
 	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"` // Skip server certificate verification (not recommended for production)
@@ -42,9 +42,9 @@ type KafkaConfig struct {
 // MQTTTLSConfig contains TLS settings for MQTT connection
 type MQTTTLSConfig struct {
 	Enabled            bool   `yaml:"enabled"`              // Enable TLS connection
-	CAFile             string `yaml:"ca_file"`              // Path to CA certificate file
-	CertFile           string `yaml:"cert_file"`            // Path to client certificate file (for mutual TLS)
-	KeyFile            string `yaml:"key_file"`             // Path to client private key file (for mutual TLS)
+	CAFile             string `yaml:"ca_file"`              // Path to CA certificate file (optional; if not set, system CA certificates are used)
+	CertFile           string `yaml:"cert_file"`            // Path to client certificate file (optional, for mutual TLS)
+	KeyFile            string `yaml:"key_file"`             // Path to client private key file (optional, for mutual TLS)
 	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"` // Skip server certificate verification (not recommended for production)
 }
 

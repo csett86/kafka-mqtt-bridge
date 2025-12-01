@@ -18,7 +18,7 @@ kafka:
   # Azure Event Hubs requires TLS for all connections
   # tls:
   #   enabled: true
-  #   # For Azure Event Hubs, system CA certificates are sufficient
+  #   # When ca_file is not specified, system CA certificates are used (recommended for most cases)
   #   # ca_file: "/path/to/ca.crt"  # Optional: Path to custom CA certificate
   #   # cert_file: "/path/to/client.crt"  # Optional: For mutual TLS
   #   # key_file: "/path/to/client.key"   # Optional: For mutual TLS
@@ -48,11 +48,11 @@ mqtt:
   # TLS Configuration for secure MQTT connections
   # tls:
   #   enabled: true
-  #   # Path to CA certificate file for verifying server certificate
-  #   ca_file: "/path/to/ca.crt"
-  #   # Path to client certificate file (for mutual TLS authentication)
+  #   # When ca_file is not specified, system CA certificates are used (recommended for most cases)
+  #   # ca_file: "/path/to/ca.crt"  # Optional: Path to custom CA certificate
+  #   # Path to client certificate file (optional, for mutual TLS authentication)
   #   cert_file: "/path/to/client.crt"
-  #   # Path to client private key file (for mutual TLS authentication)
+  #   # Path to client private key file (optional, for mutual TLS authentication)
   #   key_file: "/path/to/client.key"
   #   # Skip server certificate verification (not recommended for production)
   #   insecure_skip_verify: false
