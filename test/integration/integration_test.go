@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -123,29 +124,35 @@ func TestKafkaToMQTTBridge(t *testing.T) {
 
 	// Use unique topics for this test
 	testID := time.Now().UnixNano()
-	kafkaTopic := fmt.Sprintf("test-bridge-kafka-%d", testID)
-	mqttTopic := fmt.Sprintf("mqtt/bridge/test/%d", testID)
-	testMessage := fmt.Sprintf("bridge-test-message-%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	kafkaTopic := "test-bridge-kafka-" + testIDStr
+	mqttTopic := "mqtt/bridge/test/" + testIDStr
+	testMessage := "bridge-test-message-" + testIDStr
+
+	// Build explicit configuration values
+	kafkaGroupID := "test-bridge-group-" + testIDStr
+	mqttClientID := "test-bridge-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
 
 	// Create a temporary config file for the bridge
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-bridge-group-%d"
+  broker: "` + kafkaBrokers + `"
+  group_id: "` + kafkaGroupID + `"
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-bridge-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
 
 bridge:
   name: "test-bridge"
   log_level: "debug"
   buffer_size: 100
   kafka_to_mqtt:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, kafkaTopic, mqttTopic)
+    source_topic: "` + kafkaTopic + `"
+    dest_topic: "` + mqttTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -236,8 +243,9 @@ func TestBridgeMultipleMessages(t *testing.T) {
 
 	// Use unique topics for this test
 	testID := time.Now().UnixNano()
-	kafkaTopic := fmt.Sprintf("test-bridge-multi-%d", testID)
-	mqttTopic := fmt.Sprintf("mqtt/bridge/multi/%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	kafkaTopic := "test-bridge-multi-" + testIDStr
+	mqttTopic := "mqtt/bridge/multi/" + testIDStr
 
 	testMessages := []string{
 		"bridge-message-1",
@@ -245,25 +253,30 @@ func TestBridgeMultipleMessages(t *testing.T) {
 		"bridge-message-3",
 	}
 
+	// Build explicit configuration values
+	kafkaGroupID := "test-bridge-multi-group-" + testIDStr
+	mqttClientID := "test-bridge-multi-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
+
 	// Create a temporary config file for the bridge
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-bridge-multi-group-%d"
+  broker: "` + kafkaBrokers + `"
+  group_id: "` + kafkaGroupID + `"
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-bridge-multi-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
 
 bridge:
   name: "test-bridge-multi"
   log_level: "debug"
   buffer_size: 100
   kafka_to_mqtt:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, kafkaTopic, mqttTopic)
+    source_topic: "` + kafkaTopic + `"
+    dest_topic: "` + mqttTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -375,29 +388,35 @@ func TestMQTTToKafkaBridge(t *testing.T) {
 
 	// Use unique topics for this test
 	testID := time.Now().UnixNano()
-	mqttTopic := fmt.Sprintf("mqtt/to-kafka/test/%d", testID)
-	kafkaTopic := fmt.Sprintf("test-mqtt-to-kafka-%d", testID)
-	testMessage := fmt.Sprintf("mqtt-to-kafka-test-message-%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	mqttTopic := "mqtt/to-kafka/test/" + testIDStr
+	kafkaTopic := "test-mqtt-to-kafka-" + testIDStr
+	testMessage := "mqtt-to-kafka-test-message-" + testIDStr
+
+	// Build explicit configuration values
+	kafkaGroupID := "test-mqtt-to-kafka-group-" + testIDStr
+	mqttClientID := "test-mqtt-to-kafka-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
 
 	// Create a temporary config file for the bridge (MQTT→Kafka only)
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-mqtt-to-kafka-group-%d"
+  broker: "` + kafkaBrokers + `"
+  group_id: "` + kafkaGroupID + `"
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-mqtt-to-kafka-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
 
 bridge:
   name: "test-mqtt-to-kafka"
   log_level: "debug"
   buffer_size: 100
   mqtt_to_kafka:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, mqttTopic, kafkaTopic)
+    source_topic: "` + mqttTopic + `"
+    dest_topic: "` + kafkaTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -600,24 +619,30 @@ func TestMQTTToKafkaBridgeWithQoS2(t *testing.T) {
 
 	// Use unique topics for this test
 	testID := time.Now().UnixNano()
-	mqttTopic := fmt.Sprintf("mqtt/qos2/test/%d", testID)
-	kafkaTopic := fmt.Sprintf("test-mqtt-qos2-%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	mqttTopic := "mqtt/qos2/test/" + testIDStr
+	kafkaTopic := "test-mqtt-qos2-" + testIDStr
 	testMessages := []string{
-		fmt.Sprintf("qos2-message-1-%d", testID),
-		fmt.Sprintf("qos2-message-2-%d", testID),
-		fmt.Sprintf("qos2-message-3-%d", testID),
+		"qos2-message-1-" + testIDStr,
+		"qos2-message-2-" + testIDStr,
+		"qos2-message-3-" + testIDStr,
 	}
 
+	// Build explicit configuration values
+	kafkaGroupID := "test-mqtt-qos2-group-" + testIDStr
+	mqttClientID := "test-mqtt-qos2-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
+
 	// Create a temporary config file for the bridge with QoS 2
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-mqtt-qos2-group-%d"
+  broker: "` + kafkaBrokers + `"
+  group_id: "` + kafkaGroupID + `"
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-mqtt-qos2-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
   qos: 2
   clean_session: false
 
@@ -626,9 +651,9 @@ bridge:
   log_level: "debug"
   buffer_size: 100
   mqtt_to_kafka:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, mqttTopic, kafkaTopic)
+    source_topic: "` + mqttTopic + `"
+    dest_topic: "` + kafkaTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
@@ -725,24 +750,30 @@ func TestKafkaToMQTTBridgeWithQoS2(t *testing.T) {
 
 	// Use unique topics for this test
 	testID := time.Now().UnixNano()
-	kafkaTopic := fmt.Sprintf("test-kafka-qos2-%d", testID)
-	mqttTopic := fmt.Sprintf("mqtt/kafka-qos2/test/%d", testID)
+	testIDStr := strconv.FormatInt(testID, 10)
+	kafkaTopic := "test-kafka-qos2-" + testIDStr
+	mqttTopic := "mqtt/kafka-qos2/test/" + testIDStr
 	testMessages := []string{
-		fmt.Sprintf("kafka-qos2-message-1-%d", testID),
-		fmt.Sprintf("kafka-qos2-message-2-%d", testID),
-		fmt.Sprintf("kafka-qos2-message-3-%d", testID),
+		"kafka-qos2-message-1-" + testIDStr,
+		"kafka-qos2-message-2-" + testIDStr,
+		"kafka-qos2-message-3-" + testIDStr,
 	}
 
+	// Build explicit configuration values
+	kafkaGroupID := "test-kafka-qos2-group-" + testIDStr
+	mqttClientID := "test-kafka-qos2-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
+
 	// Create a temporary config file for the bridge with QoS 2
-	configContent := fmt.Sprintf(`
+	configContent := `
 kafka:
-  broker: "%s"
-  group_id: "test-kafka-qos2-group-%d"
+  broker: "` + kafkaBrokers + `"
+  group_id: "` + kafkaGroupID + `"
 
 mqtt:
-  broker: "%s"
-  port: %d
-  client_id: "test-kafka-qos2-%d"
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
   qos: 2
   clean_session: false
 
@@ -751,9 +782,9 @@ bridge:
   log_level: "debug"
   buffer_size: 100
   kafka_to_mqtt:
-    source_topic: "%s"
-    dest_topic: "%s"
-`, kafkaBrokers, testID, mqttBroker, mqttPort, testID, kafkaTopic, mqttTopic)
+    source_topic: "` + kafkaTopic + `"
+    dest_topic: "` + mqttTopic + `"
+`
 
 	// Create temporary config file
 	tmpDir := t.TempDir()
