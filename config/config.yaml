@@ -49,6 +49,19 @@ mqtt:
   dest_topic: "kafka/events"
   client_id: "kafka-mqtt-bridge"
   
+  # QoS level for MQTT operations (0, 1, or 2). Default: 1
+  # QoS 0: At most once - Fire and forget, no acknowledgment
+  # QoS 1: At least once - Message is delivered at least once (may be duplicated)
+  # QoS 2: Exactly once - Message is delivered exactly once (highest overhead)
+  # For MQTT→Kafka bridging, messages are acknowledged (Ack) only after 
+  # successful delivery to Kafka, ensuring reliable message transfer.
+  qos: 1
+  
+  # CleanSession flag. Default: false when QoS > 0, true otherwise
+  # When false, the broker stores subscriptions and queued messages for the client
+  # This is important for QoS > 0 to ensure message delivery after reconnection
+  # clean_session: false
+  
   # Dynamic topic mappings for Kafka→MQTT bridging (alternative to dest_topic)
   # Supports wildcards: + (single level), # (multi-level), * (single level alias)
   # Use {1}, {2}, etc. to reference captured wildcard segments in target
