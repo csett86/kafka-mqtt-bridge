@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -51,6 +52,17 @@ func getEnvInt(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+// getProjectRoot returns the absolute path to the project root directory.
+// It works by finding the directory containing go.mod relative to this test file.
+func getProjectRoot() string {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("failed to get current file path")
+	}
+	// Navigate from test/integration/ to project root (../../)
+	return filepath.Join(filepath.Dir(filename), "..", "..")
 }
 
 // TestMain provides setup and teardown for integration tests
