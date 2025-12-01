@@ -191,13 +191,15 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 			// Commit the offset only after successful MQTT delivery.
 			// Use a separate context with timeout to ensure commits complete even during
 			// graceful shutdown when the main context is canceled.
-			commitCtx, commitCancel := context.WithTimeout(context.Background(), commitTimeout)
-			if err := b.kafkaClient.CommitMessage(commitCtx, msg); err != nil {
-				b.logger.Error("Failed to commit message after MQTT delivery", zap.Error(err))
-				// Message was delivered to MQTT but commit failed
-				// On restart, it may be redelivered but that's safer than losing messages
-			}
-			commitCancel()
+			func() {
+				commitCtx, commitCancel := context.WithTimeout(context.Background(), commitTimeout)
+				defer commitCancel()
+				if err := b.kafkaClient.CommitMessage(commitCtx, msg); err != nil {
+					b.logger.Error("Failed to commit message after MQTT delivery", zap.Error(err))
+					// Message was delivered to MQTT but commit failed
+					// On restart, it may be redelivered but that's safer than losing messages
+				}
+			}()
 
 			b.logger.Debug("Message bridged",
 				zap.String("from", "kafka"),
