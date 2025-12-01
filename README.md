@@ -7,7 +7,7 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers bid
 - Bidirectional message bridging between Kafka and MQTT
 - Configurable Kafka and MQTT connection settings in a single config file
 - Static binary releases for linux and windows without any dependencies
-- Implemented in Go with very low memory footprint (10MB)
+- Implemented in Go with very low memory footprint (<10MB)
 - Graceful shutdown handling
 - Comprehensive logging with Zap
 - Production-ready code structure following Go best practices
