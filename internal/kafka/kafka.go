@@ -25,12 +25,11 @@ const (
 // Client wraps the Kafka reader and writer with connection recovery support
 type Client struct {
 	reader       *kafka.Reader
-	writer       *kafka.Writer
-	dynamicWrite bool // If true, topic is specified per message
-	broker       string
-	readTopic    string
-	groupID      string
-	logger       *zap.Logger
+	writer    *kafka.Writer
+	broker    string
+	readTopic string
+	groupID   string
+	logger    *zap.Logger
 }
 
 // NewClient creates a new Kafka client with separate read and write topics
@@ -58,9 +57,8 @@ func NewClient(broker string, readTopic string, writeTopic string, groupID strin
 		})
 	}
 
-	dynamicWrite := writeTopic == ""
 	var writer *kafka.Writer
-	if !dynamicWrite {
+	if writeTopic != "" {
 		writer = &kafka.Writer{
 			Addr:                   kafka.TCP(broker),
 			Topic:                  writeTopic,
@@ -73,29 +71,15 @@ func NewClient(broker string, readTopic string, writeTopic string, groupID strin
 			BatchTimeout:    100 * time.Millisecond,
 			RequiredAcks:    kafka.RequireOne,
 		}
-	} else {
-		// Create a writer without a fixed topic for dynamic topic mapping
-		writer = &kafka.Writer{
-			Addr:                   kafka.TCP(broker),
-			Balancer:               &kafka.LeastBytes{},
-			AllowAutoTopicCreation: true,
-			// Connection recovery settings
-			MaxAttempts:     maxWriteRetries,
-			WriteBackoffMin: 100 * time.Millisecond,
-			WriteBackoffMax: 1 * time.Second,
-			BatchTimeout:    100 * time.Millisecond,
-			RequiredAcks:    kafka.RequireOne,
-		}
 	}
 
 	return &Client{
-		reader:       reader,
-		writer:       writer,
-		dynamicWrite: dynamicWrite,
-		broker:       broker,
-		readTopic:    readTopic,
-		groupID:      groupID,
-		logger:       logger,
+		reader:    reader,
+		writer:    writer,
+		broker:    broker,
+		readTopic: readTopic,
+		groupID:   groupID,
+		logger:    logger,
 	}, nil
 }
 

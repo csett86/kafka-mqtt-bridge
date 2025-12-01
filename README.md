@@ -5,7 +5,6 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers. Th
 ## Features
 
 - Bidirectional message bridging between Kafka and MQTT
-- **Dynamic topic mapping with wildcard support** for flexible routing
 - Configurable Kafka and MQTT connection settings
 - Graceful shutdown handling
 - Comprehensive logging with Zap
@@ -43,7 +42,7 @@ Create a `config/config.yaml` file or copy from the example:
 cp config/config.yaml config/local.yaml
 ```
 
-### Basic Configuration (Static Topics)
+### Configuration
 
 Edit the configuration file with your Kafka and MQTT settings:
 
@@ -72,49 +71,6 @@ bridge:
   log_level: "info"
   buffer_size: 100
 ```
-
-### Dynamic Topic Mapping with Wildcards
-
-For more flexible routing, you can use topic mappings with wildcard patterns:
-
-```yaml
-kafka:
-  broker: "localhost:9092"
-  source_topic: "events"
-  group_id: "kafka-mqtt-bridge"
-  
-  # Dynamic topic mappings for MQTT→Kafka bridging
-  topic_mappings:
-    - source: "sensors/+/data"      # + matches a single level
-      target: "kafka-sensors-{1}"   # {1} references the captured segment
-    - source: "devices/#"           # # matches multiple levels
-      target: "kafka-devices"
-
-mqtt:
-  broker: "localhost"
-  port: 1883
-  client_id: "kafka-mqtt-bridge"
-  
-  # Dynamic topic mappings for Kafka→MQTT bridging
-  topic_mappings:
-    - source: "kafka-events-*"      # * is an alias for single-level wildcard
-      target: "mqtt/{1}/events"
-```
-
-#### Wildcard Patterns
-
-| Pattern | Description | Example Match |
-|---------|-------------|---------------|
-| `+` | Matches exactly one topic level | `sensors/+/data` matches `sensors/temp/data` |
-| `*` | Same as `+` (alias) | `events-*` matches `events-prod` |
-| `#` | Matches zero or more levels | `devices/#` matches `devices/floor1/room2` |
-
-#### Template Placeholders
-
-Use `{1}`, `{2}`, etc. to reference captured wildcard segments in the target topic:
-
-- `sensors/+/data` → `kafka/{1}` transforms `sensors/temp/data` to `kafka/temp`
-- `home/+/+/status` → `mqtt/{1}/{2}` transforms `home/floor1/room2/status` to `mqtt/floor1/room2`
 
 ## Usage
 
@@ -214,10 +170,8 @@ kafka-mqtt-bridge/
 │   └── mqtt/
 │       └── mqtt.go                       # MQTT client
 ├── pkg/
-│   ├── config/
-│   │   └── config.go                     # Configuration management
-│   └── topicmapper/
-│       └── mapper.go                     # Topic mapping with wildcards
+│   └── config/
+│       └── config.go                     # Configuration management
 ├── test/
 │   ├── integration/
 │   │   └── integration_test.go           # Integration tests
