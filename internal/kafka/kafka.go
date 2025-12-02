@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/csett86/kafka-mqtt-bridge/internal/avro"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl"
 	"github.com/segmentio/kafka-go/sasl/plain"
@@ -31,12 +32,14 @@ const (
 
 // Client wraps the Kafka reader and writer with connection recovery support
 type Client struct {
-	reader    *kafka.Reader
-	writer    *kafka.Writer
-	broker    string
-	readTopic string
-	groupID   string
-	logger    *zap.Logger
+	reader     *kafka.Reader
+	writer     *kafka.Writer
+	broker     string
+	readTopic  string
+	writeTopic string
+	groupID    string
+	logger     *zap.Logger
+	avroCodec  *avro.Codec // Optional Avro codec for serialization/deserialization
 }
 
 // SASLConfig contains SASL authentication settings for Kafka
@@ -56,6 +59,15 @@ type TLSConfig struct {
 	InsecureSkipVerify bool
 }
 
+// AvroConfig contains Avro serialization settings for Kafka
+type AvroConfig struct {
+	Enabled                bool
+	SchemaRegistryURL      string
+	SchemaRegistryUsername string
+	SchemaRegistryPassword string
+	SubjectNameStrategy    string
+}
+
 // ClientConfig contains all configuration for creating a Kafka client
 type ClientConfig struct {
 	Broker     string
@@ -64,6 +76,7 @@ type ClientConfig struct {
 	GroupID    string
 	SASL       *SASLConfig
 	TLS        *TLSConfig
+	Avro       *AvroConfig
 }
 
 // NewClient creates a new Kafka client with separate read and write topics
@@ -78,7 +91,7 @@ func NewClient(broker string, readTopic string, writeTopic string, groupID strin
 }
 
 // NewClientWithConfig creates a new Kafka client with full configuration support
-// including SASL authentication and TLS for Azure Event Hubs compatibility
+// including SASL authentication, TLS, and optional Avro serialization
 func NewClientWithConfig(cfg ClientConfig, logger *zap.Logger) (*Client, error) {
 	if cfg.Broker == "" {
 		return nil, fmt.Errorf("no kafka broker provided")
@@ -140,13 +153,32 @@ func NewClientWithConfig(cfg ClientConfig, logger *zap.Logger) (*Client, error) 
 		}
 	}
 
+	// Create Avro codec if configured
+	var avroCodec *avro.Codec
+	if cfg.Avro != nil && cfg.Avro.Enabled {
+		avroCodec, err = avro.NewCodec(avro.Config{
+			SchemaRegistryURL:      cfg.Avro.SchemaRegistryURL,
+			SchemaRegistryUsername: cfg.Avro.SchemaRegistryUsername,
+			SchemaRegistryPassword: cfg.Avro.SchemaRegistryPassword,
+			SubjectNameStrategy:    cfg.Avro.SubjectNameStrategy,
+		}, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Avro codec: %w", err)
+		}
+		logger.Info("Avro serialization enabled for Kafka",
+			zap.String("schemaRegistryURL", cfg.Avro.SchemaRegistryURL),
+		)
+	}
+
 	return &Client{
-		reader:    reader,
-		writer:    writer,
-		broker:    cfg.Broker,
-		readTopic: cfg.ReadTopic,
-		groupID:   cfg.GroupID,
-		logger:    logger,
+		reader:     reader,
+		writer:     writer,
+		broker:     cfg.Broker,
+		readTopic:  cfg.ReadTopic,
+		writeTopic: cfg.WriteTopic,
+		groupID:    cfg.GroupID,
+		logger:     logger,
+		avroCodec:  avroCodec,
 	}, nil
 }
 
@@ -261,12 +293,30 @@ func isTransientError(err error) bool {
 
 // FetchMessage fetches a single message from Kafka without committing the offset.
 // The caller must call CommitMessage after successful processing.
+// If Avro is enabled, the message value is automatically deserialized to JSON.
 func (c *Client) FetchMessage(ctx context.Context) (*kafka.Message, error) {
 	backoff := readRetryDelay
 
 	for {
 		msg, err := c.reader.FetchMessage(ctx)
 		if err == nil {
+			// Deserialize Avro if enabled and message has Avro format
+			if c.avroCodec != nil && avro.IsAvroMessage(msg.Value) {
+				decoded, err := c.avroCodec.Deserialize(msg.Value)
+				if err != nil {
+					c.logger.Warn("Failed to deserialize Avro message, returning raw bytes",
+						zap.Error(err),
+						zap.String("topic", msg.Topic),
+					)
+					// Return the raw message without deserialization
+					return &msg, nil
+				}
+				msg.Value = decoded
+				c.logger.Debug("Deserialized Avro message",
+					zap.String("topic", msg.Topic),
+					zap.Int("originalSize", len(decoded)),
+				)
+			}
 			return &msg, nil
 		}
 
@@ -311,12 +361,30 @@ func (c *Client) CommitMessage(ctx context.Context, msg *kafka.Message) error {
 // ReadMessage reads a single message from Kafka with automatic reconnection
 // Note: This method auto-commits the offset. Use FetchMessage + CommitMessage
 // for manual offset control.
+// If Avro is enabled, the message value is automatically deserialized to JSON.
 func (c *Client) ReadMessage(ctx context.Context) (*kafka.Message, error) {
 	backoff := readRetryDelay
 
 	for {
 		msg, err := c.reader.ReadMessage(ctx)
 		if err == nil {
+			// Deserialize Avro if enabled and message has Avro format
+			if c.avroCodec != nil && avro.IsAvroMessage(msg.Value) {
+				decoded, err := c.avroCodec.Deserialize(msg.Value)
+				if err != nil {
+					c.logger.Warn("Failed to deserialize Avro message, returning raw bytes",
+						zap.Error(err),
+						zap.String("topic", msg.Topic),
+					)
+					// Return the raw message without deserialization
+					return &msg, nil
+				}
+				msg.Value = decoded
+				c.logger.Debug("Deserialized Avro message",
+					zap.String("topic", msg.Topic),
+					zap.Int("originalSize", len(decoded)),
+				)
+			}
 			return &msg, nil
 		}
 
@@ -350,21 +418,44 @@ func (c *Client) ReadMessage(ctx context.Context) (*kafka.Message, error) {
 	}
 }
 
-// WriteMessage writes a single message to Kafka with retry logic for transient errors
+// WriteMessage writes a single message to Kafka with retry logic for transient errors.
+// If Avro is enabled, the message value is automatically serialized using the schema.
 func (c *Client) WriteMessage(ctx context.Context, key []byte, value []byte) error {
 	return c.WriteMessageToTopic(ctx, "", key, value)
 }
 
 // WriteMessageToTopic writes a single message to a specific Kafka topic with retry logic
-// and exponential backoff for connection recovery
+// and exponential backoff for connection recovery.
+// If Avro is enabled, the message value is automatically serialized using the schema.
 func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []byte, value []byte) error {
 	var lastErr error
 	backoff := retryBackoff
 
+	// Determine the actual topic to use
+	actualTopic := topic
+	if actualTopic == "" {
+		actualTopic = c.writeTopic
+	}
+
+	// Serialize to Avro if enabled
+	serializedValue := value
+	if c.avroCodec != nil && len(value) > 0 {
+		var err error
+		serializedValue, err = c.avroCodec.Serialize(actualTopic, false, value)
+		if err != nil {
+			return fmt.Errorf("failed to serialize Avro message: %w", err)
+		}
+		c.logger.Debug("Serialized message to Avro",
+			zap.String("topic", actualTopic),
+			zap.Int("originalSize", len(value)),
+			zap.Int("serializedSize", len(serializedValue)),
+		)
+	}
+
 	for i := 0; i < maxWriteRetries; i++ {
 		msg := kafka.Message{
 			Key:   key,
-			Value: value,
+			Value: serializedValue,
 		}
 		if topic != "" {
 			msg.Topic = topic

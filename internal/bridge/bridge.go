@@ -64,6 +64,18 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 		kafkaWriteTopic = cfg.Bridge.MQTTToKafka.DestTopic
 	}
 
+	// Prepare Kafka Avro configuration if enabled
+	var kafkaAvroConfig *kafka.AvroConfig
+	if cfg.Kafka.Avro.Enabled {
+		kafkaAvroConfig = &kafka.AvroConfig{
+			Enabled:                cfg.Kafka.Avro.Enabled,
+			SchemaRegistryURL:      cfg.Kafka.Avro.SchemaRegistryURL,
+			SchemaRegistryUsername: cfg.Kafka.Avro.SchemaRegistryUsername,
+			SchemaRegistryPassword: cfg.Kafka.Avro.SchemaRegistryPassword,
+			SubjectNameStrategy:    cfg.Kafka.Avro.SubjectNameStrategy,
+		}
+	}
+
 	// Initialize Kafka client with separate read/write topics and auth config
 	kafkaClient, err := kafka.NewClientWithConfig(kafka.ClientConfig{
 		Broker:     cfg.Kafka.Broker,
@@ -72,6 +84,7 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 		GroupID:    cfg.Kafka.GroupID,
 		SASL:       saslConfig,
 		TLS:        kafkaTLSConfig,
+		Avro:       kafkaAvroConfig,
 	}, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kafka client: %w", err)
@@ -125,6 +138,7 @@ func (b *Bridge) Start(ctx context.Context) error {
 	b.logger.Info("Starting bridge",
 		zap.String("name", b.config.Bridge.Name),
 		zap.Int("mqttQoS", b.config.MQTT.QoS),
+		zap.Bool("avroEnabled", b.config.Kafka.Avro.Enabled),
 	)
 
 	var wg sync.WaitGroup

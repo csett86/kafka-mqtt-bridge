@@ -6,6 +6,7 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers bid
 
 - Bidirectional message bridging between Kafka and MQTT
 - Configurable Kafka and MQTT connection settings in a single config file
+- **Avro serialization/deserialization** with Confluent Schema Registry integration
 - Static binary releases for linux and windows without any dependencies
 - Implemented in Go with very low memory footprint (<10MB)
 - Graceful shutdown handling
@@ -79,6 +80,29 @@ bridge:
     source_topic: "events"
     dest_topic: "kafka/events"
 ```
+
+### Avro Configuration
+
+To enable Avro serialization/deserialization with Confluent Schema Registry:
+
+```yaml
+kafka:
+  broker: "localhost:9092"
+  group_id: "kafka-mqtt-bridge"
+  avro:
+    enabled: true
+    schema_registry_url: "http://localhost:8081"
+    # Optional: Authentication for Schema Registry
+    # schema_registry_username: "username"
+    # schema_registry_password: "password"
+    # Subject name strategy: "topic" (default), "record", or "topic_record"
+    subject_name_strategy: "topic"
+```
+
+When Avro is enabled:
+- **Reading from Kafka**: Messages with Confluent wire format (magic byte + schema ID) are automatically deserialized to JSON
+- **Writing to Kafka**: JSON messages are serialized to Avro binary format using the schema from Schema Registry
+- **Non-Avro messages**: Messages without the Avro magic byte are passed through unchanged
 
 ## Usage
 
@@ -171,6 +195,8 @@ kafka-mqtt-bridge/
 │   └── bridge/
 │       └── main.go                       # Application entry point
 ├── internal/
+│   ├── avro/
+│   │   └── avro.go                       # Avro serialization/deserialization
 │   ├── bridge/
 │   │   └── bridge.go                     # Core bridge logic
 │   ├── kafka/
@@ -199,6 +225,8 @@ kafka-mqtt-bridge/
 
 - `github.com/segmentio/kafka-go` - Kafka client library
 - `github.com/eclipse/paho.mqtt.golang` - MQTT client library
+- `github.com/linkedin/goavro/v2` - Avro serialization library
+- `github.com/riferrei/srclient` - Confluent Schema Registry client
 - `go.uber.org/zap` - Structured logging
 - `gopkg.in/yaml.v3` - YAML configuration parsing
 

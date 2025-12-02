@@ -23,6 +23,22 @@ kafka:
   #   # cert_file: "/path/to/client.crt"  # Optional: For mutual TLS
   #   # key_file: "/path/to/client.key"   # Optional: For mutual TLS
   #   insecure_skip_verify: false
+  
+  # Avro Serialization/Deserialization Configuration
+  # When enabled, Kafka messages will be serialized/deserialized using Avro format
+  # with Confluent Schema Registry integration
+  # avro:
+  #   enabled: true
+  #   # URL of the Confluent Schema Registry
+  #   schema_registry_url: "http://localhost:8081"
+  #   # Optional: Authentication credentials for Schema Registry
+  #   # schema_registry_username: "username"
+  #   # schema_registry_password: "password"
+  #   # Subject name strategy: "topic" (default), "record", or "topic_record"
+  #   # - topic: Uses <topic>-value and <topic>-key as subject names
+  #   # - record: Uses <record-name>-value and <record-name>-key
+  #   # - topic_record: Uses <topic>-<record-name>-value and <topic>-<record-name>-key
+  #   # subject_name_strategy: "topic"
 
 # MQTT Configuration
 mqtt:

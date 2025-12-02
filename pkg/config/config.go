@@ -31,12 +31,22 @@ type KafkaTLSConfig struct {
 	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"` // Skip server certificate verification (not recommended for production)
 }
 
+// KafkaAvroConfig contains Avro serialization settings for Kafka
+type KafkaAvroConfig struct {
+	Enabled                bool   `yaml:"enabled"`                  // Enable Avro serialization/deserialization
+	SchemaRegistryURL      string `yaml:"schema_registry_url"`      // URL of the Confluent Schema Registry
+	SchemaRegistryUsername string `yaml:"schema_registry_username"` // Username for Schema Registry authentication (optional)
+	SchemaRegistryPassword string `yaml:"schema_registry_password"` // Password for Schema Registry authentication (optional)
+	SubjectNameStrategy    string `yaml:"subject_name_strategy"`    // Subject name strategy: "topic" (default), "record", or "topic_record"
+}
+
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
 	Broker  string          `yaml:"broker"`
 	GroupID string          `yaml:"group_id"`
 	SASL    KafkaSASLConfig `yaml:"sasl"` // SASL authentication settings
 	TLS     KafkaTLSConfig  `yaml:"tls"`  // TLS settings
+	Avro    KafkaAvroConfig `yaml:"avro"` // Avro serialization settings
 }
 
 // MQTTTLSConfig contains TLS settings for MQTT connection
