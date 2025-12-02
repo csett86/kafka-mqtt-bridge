@@ -1,6 +1,6 @@
 # Kafka Configuration
 kafka:
-  broker: "kafka:29092"
+  broker: "kafka:9092"
   group_id: "kafka-mqtt-bridge-demo"
 
 # MQTT Configuration

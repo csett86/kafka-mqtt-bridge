@@ -5,34 +5,9 @@ This demo showcases the bidirectional message bridging capabilities of the Kafka
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ MQTT Publisher  │────▶│    Mosquitto    │────▶│                 │
-│ (transactions)  │     │  (MQTT Broker)  │     │                 │
-└─────────────────┘     └─────────────────┘     │                 │
-                               ▼                 │   Kafka-MQTT    │
-                        ┌─────────────────┐     │     Bridge      │
-                        │                 │     │                 │
-                        │                 │────▶│                 │
-                        │      Kafka      │     │                 │
-                        │     Broker      │     └─────────────────┘
-                        │                 │◀───────────│
-                        └─────────────────┘            │
-                               ▼                       │
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ Kafka Subscriber│◀────│      Kafka      │     │ Kafka Publisher │
-│ (transactions)  │     │     Broker      │◀────│  (master_data)  │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                                                       │
-                                                       ▼
-                        ┌─────────────────┐     ┌─────────────────┐
-                        │   Mosquitto     │◀────│   Kafka-MQTT    │
-                        │  (MQTT Broker)  │     │     Bridge      │
-                        └─────────────────┘     └─────────────────┘
-                               ▼
-                        ┌─────────────────┐
-                        │ MQTT Subscriber │
-                        │  (master_data)  │
-                        └─────────────────┘
+MQTT Publisher (transactions) -> Mosquitto -> Kafka-MQTT Bridge -> Kafka Broker -> Kafka Subscriber (transactions)
+
+MQTT Subscriber (master_data) <- Mosquitto <- Kafka-MQTT Bridge <- Kafka Broker <- Kafka Publisher (master_data)
 ```
 
 ## Message Flow
@@ -105,7 +80,7 @@ The bridge configuration is in `config/bridge-config.yaml`:
 
 ```yaml
 kafka:
-  broker: "kafka:29092"
+  broker: "kafka:9092"
   group_id: "kafka-mqtt-bridge-demo"
 
 mqtt:
