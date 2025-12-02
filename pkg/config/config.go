@@ -9,9 +9,10 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Kafka  KafkaConfig  `yaml:"kafka"`
-	MQTT   MQTTConfig   `yaml:"mqtt"`
-	Bridge BridgeConfig `yaml:"bridge"`
+	Kafka          KafkaConfig          `yaml:"kafka"`
+	MQTT           MQTTConfig           `yaml:"mqtt"`
+	Bridge         BridgeConfig         `yaml:"bridge"`
+	SchemaRegistry SchemaRegistryConfig `yaml:"schema_registry"` // Schema Registry configuration for Avro support
 }
 
 // KafkaSASLConfig contains SASL authentication settings for Kafka
@@ -75,6 +76,34 @@ type BridgeConfig struct {
 	KafkaToMQTT *TopicMapping `yaml:"kafka_to_mqtt"` // Kafka→MQTT topic mapping
 }
 
+// SchemaRegistryConfig contains Azure Event Hubs Schema Registry settings
+type SchemaRegistryConfig struct {
+	Enabled bool `yaml:"enabled"` // Enable Schema Registry integration for Avro serialization
+	// FullyQualifiedNamespace is the fully qualified namespace of the Schema Registry
+	// e.g., "<namespace>.servicebus.windows.net"
+	FullyQualifiedNamespace string `yaml:"fully_qualified_namespace"`
+	// GroupName is the schema group name in the registry
+	GroupName string `yaml:"group_name"`
+	// SchemaName is the name of the schema to use for serialization/deserialization
+	SchemaName string `yaml:"schema_name"`
+	// SchemaContent is the Avro schema JSON (optional - if not provided, will be fetched from registry)
+	SchemaContent string `yaml:"schema_content"`
+	// AutoRegisterSchema enables automatic schema registration (default: false)
+	// When enabled, the schema will be registered with the registry if it doesn't exist
+	AutoRegisterSchema bool `yaml:"auto_register_schema"`
+	// CacheEnabled enables schema caching (default: true)
+	CacheEnabled *bool `yaml:"cache_enabled"`
+	// TenantID is the Azure tenant ID for authentication (optional)
+	// If not provided, DefaultAzureCredential will be used
+	TenantID string `yaml:"tenant_id"`
+	// ClientID is the Azure client ID for authentication (optional)
+	// If not provided, DefaultAzureCredential will be used
+	ClientID string `yaml:"client_id"`
+	// ClientSecret is the Azure client secret for authentication (optional)
+	// If not provided, DefaultAzureCredential will be used
+	ClientSecret string `yaml:"client_secret"`
+}
+
 // LoadConfig loads configuration from a YAML file
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -111,6 +140,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Bridge.LogLevel == "" {
 		cfg.Bridge.LogLevel = "info"
+	}
+
+	// Set Schema Registry defaults
+	if cfg.SchemaRegistry.CacheEnabled == nil {
+		cacheEnabled := true
+		cfg.SchemaRegistry.CacheEnabled = &cacheEnabled
 	}
 
 	return &cfg, nil

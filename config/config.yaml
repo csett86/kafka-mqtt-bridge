@@ -74,3 +74,36 @@ bridge:
   kafka_to_mqtt:
     source_topic: "events"
     dest_topic: "kafka/events"
+
+# Azure Event Hubs Schema Registry Configuration (optional)
+# Enables Avro serialization/deserialization for messages using Azure Schema Registry
+# schema_registry:
+#   # Enable Schema Registry integration
+#   enabled: true
+#   
+#   # Fully qualified namespace of the Schema Registry
+#   # e.g., "<namespace>.servicebus.windows.net"
+#   fully_qualified_namespace: "your-namespace.servicebus.windows.net"
+#   
+#   # Schema group name in the registry
+#   group_name: "your-schema-group"
+#   
+#   # Name of the schema to use for serialization
+#   schema_name: "your-schema-name"
+#   
+#   # Optional: Avro schema JSON content for auto-registration
+#   # If not provided, schema must already exist in the registry
+#   # schema_content: '{"type":"record","name":"Event","fields":[{"name":"id","type":"string"},{"name":"data","type":"string"}]}'
+#   
+#   # Enable automatic schema registration (default: false)
+#   # When enabled, the schema will be registered with the registry if it doesn't exist
+#   # auto_register_schema: true
+#   
+#   # Enable schema caching (default: true)
+#   # cache_enabled: true
+#   
+#   # Azure AD authentication (optional)
+#   # If not provided, DefaultAzureCredential will be used
+#   # tenant_id: "your-tenant-id"
+#   # client_id: "your-client-id"
+#   # client_secret: "your-client-secret"

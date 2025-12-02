@@ -8,8 +8,11 @@ import (
 
 	pahomqtt "github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/csett86/kafka-mqtt-bridge/internal/avro"
 	"github.com/csett86/kafka-mqtt-bridge/internal/kafka"
 	"github.com/csett86/kafka-mqtt-bridge/internal/mqtt"
+	"github.com/csett86/kafka-mqtt-bridge/internal/schemaregistry"
 	"github.com/csett86/kafka-mqtt-bridge/pkg/config"
 	"go.uber.org/zap"
 )
@@ -23,11 +26,13 @@ const (
 
 // Bridge manages the connection between Kafka and MQTT
 type Bridge struct {
-	kafkaClient *kafka.Client
-	mqttClient  *mqtt.Client
-	config      *config.Config
-	logger      *zap.Logger
-	done        chan struct{}
+	kafkaClient      *kafka.Client
+	mqttClient       *mqtt.Client
+	config           *config.Config
+	logger           *zap.Logger
+	done             chan struct{}
+	avroSerializer   *avro.Serializer
+	avroDeserializer *avro.Deserializer
 }
 
 // New creates a new Bridge instance
@@ -120,12 +125,85 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 	}, nil
 }
 
+// initializeAvro initializes the Avro serializer and deserializer if schema registry is enabled
+func (b *Bridge) initializeAvro(ctx context.Context) error {
+	cfg := b.config.SchemaRegistry
+	if !cfg.Enabled {
+		return nil
+	}
+
+	// Create Azure credential
+	var cred *azidentity.ClientSecretCredential
+	var err error
+	if cfg.TenantID != "" && cfg.ClientID != "" && cfg.ClientSecret != "" {
+		cred, err = azidentity.NewClientSecretCredential(cfg.TenantID, cfg.ClientID, cfg.ClientSecret, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create Azure credential: %w", err)
+		}
+	}
+
+	// Determine cache enabled setting
+	cacheEnabled := true
+	if cfg.CacheEnabled != nil {
+		cacheEnabled = *cfg.CacheEnabled
+	}
+
+	// Create schema registry client
+	srClient, err := schemaregistry.NewClient(schemaregistry.ClientConfig{
+		FullyQualifiedNamespace: cfg.FullyQualifiedNamespace,
+		GroupName:               cfg.GroupName,
+		Credential:              cred,
+		CacheEnabled:            cacheEnabled,
+	}, b.logger)
+	if err != nil {
+		return fmt.Errorf("failed to create schema registry client: %w", err)
+	}
+
+	// Create serializer if schema name is configured
+	if cfg.SchemaName != "" {
+		serializer, err := avro.NewSerializer(ctx, avro.SerializerConfig{
+			SchemaRegistryClient: srClient,
+			SchemaName:           cfg.SchemaName,
+			SchemaContent:        cfg.SchemaContent,
+			AutoRegisterSchema:   cfg.AutoRegisterSchema,
+		}, b.logger)
+		if err != nil {
+			return fmt.Errorf("failed to create Avro serializer: %w", err)
+		}
+		b.avroSerializer = serializer
+	}
+
+	// Create deserializer (always needed for decoding messages)
+	deserializer, err := avro.NewDeserializer(avro.DeserializerConfig{
+		SchemaRegistryClient: srClient,
+	}, b.logger)
+	if err != nil {
+		return fmt.Errorf("failed to create Avro deserializer: %w", err)
+	}
+	b.avroDeserializer = deserializer
+
+	b.logger.Info("Avro support initialized",
+		zap.String("namespace", cfg.FullyQualifiedNamespace),
+		zap.String("groupName", cfg.GroupName),
+		zap.String("schemaName", cfg.SchemaName),
+		zap.Bool("autoRegister", cfg.AutoRegisterSchema),
+	)
+
+	return nil
+}
+
 // Start begins the bridge operation
 func (b *Bridge) Start(ctx context.Context) error {
 	b.logger.Info("Starting bridge",
 		zap.String("name", b.config.Bridge.Name),
 		zap.Int("mqttQoS", b.config.MQTT.QoS),
+		zap.Bool("avroEnabled", b.config.SchemaRegistry.Enabled),
 	)
+
+	// Initialize Avro support if enabled
+	if err := b.initializeAvro(ctx); err != nil {
+		return fmt.Errorf("failed to initialize Avro support: %w", err)
+	}
 
 	var wg sync.WaitGroup
 
@@ -194,7 +272,23 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 			// Use static destination topic from bridge config
 			mqttTopic := b.config.Bridge.KafkaToMQTT.DestTopic
 
-			if err := b.mqttClient.Publish(mqttTopic, msg.Value); err != nil {
+			// Process message payload - deserialize Avro if enabled and message is Avro-encoded
+			payload := msg.Value
+			if b.avroDeserializer != nil && avro.IsAvroMessage(payload) {
+				jsonBytes, err := b.avroDeserializer.DeserializeToJSON(ctx, payload)
+				if err != nil {
+					b.logger.Error("Failed to deserialize Avro message", zap.Error(err))
+					// Continue with original payload if deserialization fails
+				} else {
+					payload = jsonBytes
+					b.logger.Debug("Avro message deserialized to JSON",
+						zap.Int("originalSize", len(msg.Value)),
+						zap.Int("jsonSize", len(jsonBytes)),
+					)
+				}
+			}
+
+			if err := b.mqttClient.Publish(mqttTopic, payload); err != nil {
 				b.logger.Error("Failed to publish message to MQTT", zap.Error(err))
 				// Don't commit the offset - the message will be redelivered
 				continue
@@ -217,7 +311,7 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 				zap.String("from", "kafka"),
 				zap.String("kafkaTopic", msg.Topic),
 				zap.String("mqttTopic", mqttTopic),
-				zap.Int("size", len(msg.Value)),
+				zap.Int("size", len(payload)),
 			)
 		}
 	}
@@ -227,7 +321,24 @@ func (b *Bridge) runKafkaToMQTT(ctx context.Context) {
 func (b *Bridge) startMQTTToKafka(ctx context.Context) error {
 	handler := func(client pahomqtt.Client, msg pahomqtt.Message) {
 		kafkaTopic := b.config.Bridge.MQTTToKafka.DestTopic
-		if err := b.kafkaClient.WriteMessage(ctx, nil, msg.Payload()); err != nil {
+
+		// Process message payload - serialize to Avro if enabled
+		payload := msg.Payload()
+		if b.avroSerializer != nil {
+			avroBytes, err := b.avroSerializer.SerializeJSON(ctx, payload)
+			if err != nil {
+				b.logger.Error("Failed to serialize message to Avro", zap.Error(err))
+				// Don't acknowledge the message - it will be redelivered for QoS > 0
+				return
+			}
+			payload = avroBytes
+			b.logger.Debug("JSON message serialized to Avro",
+				zap.Int("originalSize", len(msg.Payload())),
+				zap.Int("avroSize", len(avroBytes)),
+			)
+		}
+
+		if err := b.kafkaClient.WriteMessage(ctx, nil, payload); err != nil {
 			b.logger.Error("Failed to write message to Kafka", zap.Error(err))
 			// Don't acknowledge the message - it will be redelivered for QoS > 0
 			return
@@ -242,7 +353,7 @@ func (b *Bridge) startMQTTToKafka(ctx context.Context) error {
 			zap.String("from", "mqtt"),
 			zap.String("mqttTopic", msg.Topic()),
 			zap.String("kafkaTopic", kafkaTopic),
-			zap.Int("size", len(msg.Payload())),
+			zap.Int("size", len(payload)),
 			zap.Uint8("qos", msg.Qos()),
 		)
 	}
