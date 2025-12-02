@@ -9,6 +9,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"crypto/tls"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -169,9 +170,33 @@ func TestEventHubsEmulatorProduceConsume(t *testing.T) {
 
 	t.Logf("Published message to Event Hubs Emulator topic %s: %s", eventHubsEmulatorTopic, testMessage)
 
-	// Read messages and look for our test message
-	// The readCtx timeout ensures we don't wait forever - ReadMessage will return
-	// context.DeadlineExceeded when the timeout is reached
+	// Create dialer for reader
+	dialer := &kafka.Dialer{
+		Timeout:   10 * time.Second,
+		DualStack: true,
+		TLS: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+		SASLMechanism: plain.Mechanism{
+			Username: "$ConnectionString",
+			Password: azureEventHubsConnectionString,
+		},
+	}
+
+	// Create reader for Azure Event Hubs
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:     []string{azureEventHubsBroker},
+		Topic:       azureEventHubsTopic,
+		GroupID:     "test-azure-group-" + testIDStr,
+		Dialer:      dialer,
+		StartOffset: kafka.LastOffset, // Start from end to get our test message
+		MinBytes:    1,
+		MaxBytes:    10e6,
+		MaxWait:     100 * time.Millisecond,
+	})
+	defer reader.Close()
+
+	// Read message with timeout
 	readCtx, readCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer readCancel()
 
