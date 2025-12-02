@@ -43,6 +43,12 @@ jobs:
           - os: windows
             arch: arm64
             runner: windows-latest
+          - os: darwin
+            arch: amd64
+            runner: macos-latest
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
 
     steps:
     - name: Checkout code
