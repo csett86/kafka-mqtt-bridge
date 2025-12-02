@@ -124,7 +124,7 @@ services:
       - |
         echo "Starting Kafka subscriber on topic 'transactions'..."
         sleep 10
-        kafka-console-consumer --bootstrap-server kafka:29092 --topic transactions --from-beginning 2>/dev/null | while read line; do
+        kafka-console-consumer --bootstrap-server kafka:29092 --topic transactions --from-beginning | while read line; do
           echo "[MQTT->Kafka] Received from Kafka 'transactions': $$line"
         done
 
@@ -146,7 +146,7 @@ services:
         while true; do
           timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           message="{\"id\": $$i, \"type\": \"master_data\", \"name\": \"Product-$$i\", \"timestamp\": \"$$timestamp\"}"
-          echo "$$message" | kafka-console-producer --bootstrap-server kafka:29092 --topic master_data 2>/dev/null
+          echo "$$message" | kafka-console-producer --bootstrap-server kafka:29092 --topic master_data
           echo "[Kafka->MQTT] Published to 'master_data': $$message"
           i=$$((i + 1))
           sleep 10
@@ -166,6 +166,6 @@ services:
       - |
         echo "Starting MQTT subscriber on topic 'master_data'..."
         sleep 5
-        mosquitto_sub -h mosquitto -p 1883 -t master_data -v 2>/dev/null | while read line; do
+        mosquitto_sub -h mosquitto -p 1883 -t master_data -v | while read line; do
           echo "[Kafka->MQTT] Received from MQTT: $$line"
         done
