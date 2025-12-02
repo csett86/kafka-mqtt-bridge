@@ -14,7 +14,7 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers bid
 
 ## Prerequisites
 
-- Go 1.21 or higher
+- Go 1.24 or higher
 - Apache Kafka 2.8+
 - MQTT Broker (e.g., Mosquitto, HiveMQ)
 - Docker and Docker Compose (optional, for integration tests)
