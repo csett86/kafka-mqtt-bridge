@@ -1,6 +1,6 @@
 module github.com/csett86/kafka-mqtt-bridge
 
-go 1.21
+go 1.24
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.4.3
