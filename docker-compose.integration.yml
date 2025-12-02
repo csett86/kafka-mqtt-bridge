@@ -10,10 +10,11 @@ services:
       - "10001:10001"
       - "10002:10002"
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "10000"]
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); http.get('http://localhost:10000/', (r) => process.exit(r.statusCode === 400 ? 0 : 1)).on('error', () => process.exit(1));\""]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
 
   eventhubs-emulator:
     image: mcr.microsoft.com/azure-messaging/eventhubs-emulator:latest
@@ -22,7 +23,7 @@ services:
         condition: service_healthy
     ports:
       - "5672:5672"   # AMQP
-      - "9094:9092"   # Kafka (mapped to 9094 to avoid conflict with standard Kafka)
+      - "9092:9092"   # Kafka (must be 9092 as that's what the emulator advertises)
     environment:
       BLOB_SERVER: azurite
       METADATA_SERVER: azurite
@@ -30,11 +31,11 @@ services:
     volumes:
       - ./test/eventhubs-emulator-config.json:/Eventhubs_Emulator/ConfigFiles/Config.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5300/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:5300/health || exit 1"]
       interval: 10s
       timeout: 10s
-      retries: 12
-      start_period: 30s
+      retries: 30
+      start_period: 90s
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -55,19 +56,19 @@ services:
       zookeeper:
         condition: service_healthy
     ports:
-      - "9092:9092"
+      - "9093:9093"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       # Allow larger messages for performance testing (2MB)
       KAFKA_MESSAGE_MAX_BYTES: 2097152
       KAFKA_REPLICA_FETCH_MAX_BYTES: 2097152
     healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9093"]
       interval: 10s
       timeout: 10s
       retries: 10

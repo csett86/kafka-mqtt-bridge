@@ -10,9 +10,6 @@
             "PartitionCount": "2",
             "ConsumerGroups": [
               {
-                "Name": "$Default"
-              },
-              {
                 "Name": "test-consumer-group"
               }
             ]

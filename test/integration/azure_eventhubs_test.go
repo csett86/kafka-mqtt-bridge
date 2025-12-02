@@ -1,5 +1,5 @@
 // Package integration provides integration tests for the kafka-mqtt-bridge.
-// This file contains tests for Azure Event Hubs Emulator support with SASL/PLAIN authentication.
+// This file contains tests for Azure Event Hubs Emulator support.
 // The tests use the Azure Event Hubs Emulator which is started via docker-compose.
 package integration
 
@@ -21,30 +21,35 @@ import (
 // Azure Event Hubs Emulator configuration
 // The emulator is started as part of the docker-compose.integration.yml
 var (
-	// Event Hubs Emulator Kafka endpoint (port 9094 is mapped to the emulator's internal 9092)
-	eventHubsEmulatorBroker = getEnv("TEST_EVENTHUBS_EMULATOR_BROKER", "localhost:9094")
+	// Event Hubs Emulator Kafka endpoint (port 9092 - the emulator advertises this internally)
+	eventHubsEmulatorBroker = getEnv("TEST_EVENTHUBS_EMULATOR_BROKER", "localhost:9092")
 	// Event Hubs Emulator connection string for SASL authentication
-	// Format: Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;
 	eventHubsEmulatorConnectionString = getEnv("TEST_EVENTHUBS_EMULATOR_CONNECTION_STRING",
 		"Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;")
 	// Event Hub name (defined in test/eventhubs-emulator-config.json)
 	eventHubsEmulatorTopic = getEnv("TEST_EVENTHUBS_EMULATOR_TOPIC", "eh1")
 )
 
+// getEventHubsDialer returns a dialer configured for Event Hubs Emulator with SASL
+func getEventHubsDialer() *kafka.Dialer {
+	mechanism := plain.Mechanism{
+		Username: "$ConnectionString",
+		Password: eventHubsEmulatorConnectionString,
+	}
+
+	return &kafka.Dialer{
+		Timeout:       10 * time.Second,
+		DualStack:     true,
+		SASLMechanism: mechanism,
+	}
+}
+
 // checkEventHubsEmulatorConnection checks if the Event Hubs Emulator is available
 func checkEventHubsEmulatorConnection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Create dialer with SASL PLAIN authentication
-	dialer := &kafka.Dialer{
-		Timeout:   10 * time.Second,
-		DualStack: true,
-		SASLMechanism: plain.Mechanism{
-			Username: "$ConnectionString",
-			Password: eventHubsEmulatorConnectionString,
-		},
-	}
+	dialer := getEventHubsDialer()
 
 	conn, err := dialer.DialContext(ctx, "tcp", eventHubsEmulatorBroker)
 	if err != nil {
@@ -55,7 +60,7 @@ func checkEventHubsEmulatorConnection() error {
 }
 
 // TestEventHubsEmulatorConnection tests basic connectivity to Azure Event Hubs Emulator
-// using SASL/PLAIN authentication over the Kafka protocol.
+// using the Kafka protocol with SASL/PLAIN authentication.
 func TestEventHubsEmulatorConnection(t *testing.T) {
 	if err := checkEventHubsEmulatorConnection(); err != nil {
 		t.Skipf("Skipping Event Hubs Emulator test: %v", err)
@@ -64,15 +69,7 @@ func TestEventHubsEmulatorConnection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Create dialer with SASL PLAIN authentication (Azure Event Hubs uses $ConnectionString as username)
-	dialer := &kafka.Dialer{
-		Timeout:   10 * time.Second,
-		DualStack: true,
-		SASLMechanism: plain.Mechanism{
-			Username: "$ConnectionString",
-			Password: eventHubsEmulatorConnectionString,
-		},
-	}
+	dialer := getEventHubsDialer()
 
 	// Connect to Event Hubs Emulator
 	conn, err := dialer.DialContext(ctx, "tcp", eventHubsEmulatorBroker)
@@ -83,16 +80,14 @@ func TestEventHubsEmulatorConnection(t *testing.T) {
 
 	t.Log("Successfully connected to Event Hubs Emulator with SASL authentication")
 
-	// Verify connection by reading broker metadata
-	brokers, err := conn.Brokers()
+	// Verify connection by reading partitions
+	partitions, err := conn.ReadPartitions(eventHubsEmulatorTopic)
 	if err != nil {
-		t.Fatalf("Failed to get broker metadata: %v", err)
+		t.Fatalf("Failed to read partitions: %v", err)
 	}
 
-	t.Logf("Connected to Event Hubs Emulator, found %d broker(s)", len(brokers))
-	for _, b := range brokers {
-		t.Logf("  Broker: %s:%d", b.Host, b.Port)
-	}
+	t.Logf("Found %d partitions for topic %s", len(partitions), eventHubsEmulatorTopic)
+	t.Log("Event Hubs Emulator connection test passed")
 }
 
 // TestEventHubsEmulatorProduceConsume tests message round-trip through Event Hubs Emulator
@@ -108,30 +103,18 @@ func TestEventHubsEmulatorProduceConsume(t *testing.T) {
 	testIDStr := strconv.FormatInt(testID, 10)
 	testMessage := "eventhubs-emulator-test-message-" + testIDStr
 
-	// Create transport with SASL PLAIN authentication (no TLS for emulator)
-	transport := &kafka.Transport{
-		SASL: plain.Mechanism{
-			Username: "$ConnectionString",
-			Password: eventHubsEmulatorConnectionString,
-		},
-	}
+	dialer := getEventHubsDialer()
 
-	// Create writer for Event Hubs Emulator
-	writer := &kafka.Writer{
-		Addr:      kafka.TCP(eventHubsEmulatorBroker),
-		Topic:     eventHubsEmulatorTopic,
-		Balancer:  &kafka.LeastBytes{},
-		Transport: transport,
-		// Event Hubs Emulator doesn't support auto topic creation (topics defined in config)
-		AllowAutoTopicCreation: false,
-		BatchTimeout:           100 * time.Millisecond,
-		WriteTimeout:           10 * time.Second,
-		RequiredAcks:           kafka.RequireOne,
+	// Connect to leader for partition 0
+	leaderConn, err := dialer.DialLeader(ctx, "tcp", eventHubsEmulatorBroker, eventHubsEmulatorTopic, 0)
+	if err != nil {
+		t.Fatalf("Failed to connect to Event Hubs Emulator leader: %v", err)
 	}
-	defer writer.Close()
+	defer leaderConn.Close()
 
 	// Write test message
-	err := writer.WriteMessages(ctx, kafka.Message{
+	leaderConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_, err = leaderConn.WriteMessages(kafka.Message{
 		Key:   []byte("test-key-" + testIDStr),
 		Value: []byte(testMessage),
 	})
@@ -141,43 +124,39 @@ func TestEventHubsEmulatorProduceConsume(t *testing.T) {
 
 	t.Logf("Published message to Event Hubs Emulator topic %s: %s", eventHubsEmulatorTopic, testMessage)
 
-	// Create dialer for reader (no TLS for emulator)
-	dialer := &kafka.Dialer{
-		Timeout:   10 * time.Second,
-		DualStack: true,
-		SASLMechanism: plain.Mechanism{
-			Username: "$ConnectionString",
-			Password: eventHubsEmulatorConnectionString,
-		},
-	}
-
-	// Create reader for Event Hubs Emulator
+	// Create reader for Event Hubs Emulator with a unique group ID and start from end
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     []string{eventHubsEmulatorBroker},
 		Topic:       eventHubsEmulatorTopic,
-		GroupID:     "test-eventhubs-group-" + testIDStr,
+		Partition:   0,
 		Dialer:      dialer,
-		StartOffset: kafka.FirstOffset, // Start from beginning for emulator
+		StartOffset: kafka.LastOffset,
 		MinBytes:    1,
 		MaxBytes:    10e6,
-		MaxWait:     100 * time.Millisecond,
+		MaxWait:     1 * time.Second,
 	})
 	defer reader.Close()
 
-	// Read message with timeout
+	// Seek to the beginning to read all messages, then find our message
+	reader.SetOffset(kafka.FirstOffset)
+
+	// Read messages until we find ours or timeout
 	readCtx, readCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer readCancel()
 
-	msg, err := reader.ReadMessage(readCtx)
-	if err != nil {
-		t.Fatalf("Failed to read message from Event Hubs Emulator: %v", err)
-	}
+	var received string
+	for {
+		msg, err := reader.ReadMessage(readCtx)
+		if err != nil {
+			t.Fatalf("Failed to read message from Event Hubs Emulator: %v", err)
+		}
 
-	received := string(msg.Value)
-	if received != testMessage {
-		t.Errorf("Message mismatch: got %q, want %q", received, testMessage)
-	} else {
-		t.Logf("Successfully received message from Event Hubs Emulator: %s", received)
+		received = string(msg.Value)
+		if received == testMessage {
+			t.Logf("Successfully received message from Event Hubs Emulator: %s", received)
+			break
+		}
+		t.Logf("Skipping older message: %s", received)
 	}
 
 	t.Log("Successfully tested Event Hubs Emulator produce/consume round-trip")
@@ -212,7 +191,7 @@ func TestKafkaToMQTTBridgeWithEventHubsEmulator(t *testing.T) {
 	mqttPortStr := strconv.Itoa(mqttPort)
 
 	// Create a temporary config file for the bridge with Event Hubs Emulator configuration
-	// Note: No TLS for emulator, SASL with $ConnectionString username
+	// Uses SASL/PLAIN authentication with $ConnectionString username
 	configContent := `
 kafka:
   broker: "` + eventHubsEmulatorBroker + `"
@@ -222,8 +201,6 @@ kafka:
     mechanism: "PLAIN"
     username: "$ConnectionString"
     password: "` + eventHubsEmulatorConnectionString + `"
-  tls:
-    enabled: false
 
 mqtt:
   broker: "` + mqttBroker + `"
@@ -266,32 +243,20 @@ bridge:
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
-	// Create transport with SASL PLAIN authentication for writing test message (no TLS for emulator)
-	transport := &kafka.Transport{
-		SASL: plain.Mechanism{
-			Username: "$ConnectionString",
-			Password: eventHubsEmulatorConnectionString,
-		},
+	// Publish message to Event Hubs Emulator using direct connection with SASL
+	dialer := getEventHubsDialer()
+	leaderConn, err := dialer.DialLeader(ctx, "tcp", eventHubsEmulatorBroker, eventHubsEmulatorTopic, 0)
+	if err != nil {
+		t.Fatalf("Failed to connect to Event Hubs Emulator: %v", err)
 	}
 
-	// Setup Event Hubs Emulator writer and publish message BEFORE starting bridge
-	kafkaWriter := &kafka.Writer{
-		Addr:                   kafka.TCP(eventHubsEmulatorBroker),
-		Topic:                  eventHubsEmulatorTopic,
-		Balancer:               &kafka.LeastBytes{},
-		Transport:              transport,
-		AllowAutoTopicCreation: false,
-		BatchTimeout:           100 * time.Millisecond,
-		WriteTimeout:           10 * time.Second,
-		RequiredAcks:           kafka.RequireOne,
-	}
-	defer kafkaWriter.Close()
-
-	// Publish message to Event Hubs Emulator
-	err := kafkaWriter.WriteMessages(ctx, kafka.Message{
+	leaderConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_, err = leaderConn.WriteMessages(kafka.Message{
 		Key:   []byte("test-key"),
 		Value: []byte(testMessage),
 	})
+	leaderConn.Close()
+
 	if err != nil {
 		t.Fatalf("Failed to write message to Event Hubs Emulator: %v", err)
 	}
@@ -361,7 +326,7 @@ func TestMQTTToEventHubsEmulatorBridge(t *testing.T) {
 	mqttPortStr := strconv.Itoa(mqttPort)
 
 	// Create a temporary config file for the bridge (MQTT→Event Hubs Emulator)
-	// Note: No TLS for emulator
+	// Uses SASL/PLAIN authentication with $ConnectionString username
 	configContent := `
 kafka:
   broker: "` + eventHubsEmulatorBroker + `"
@@ -371,8 +336,6 @@ kafka:
     mechanism: "PLAIN"
     username: "$ConnectionString"
     password: "` + eventHubsEmulatorConnectionString + `"
-  tls:
-    enabled: false
 
 mqtt:
   broker: "` + mqttBroker + `"
@@ -428,17 +391,8 @@ bridge:
 	// Give bridge time to start and subscribe
 	time.Sleep(3 * time.Second)
 
-	// Create dialer for Event Hubs Emulator reader (no TLS for emulator)
-	dialer := &kafka.Dialer{
-		Timeout:   10 * time.Second,
-		DualStack: true,
-		SASLMechanism: plain.Mechanism{
-			Username: "$ConnectionString",
-			Password: eventHubsEmulatorConnectionString,
-		},
-	}
-
-	// Setup Event Hubs Emulator reader to consume messages forwarded by the bridge
+	// Setup Event Hubs Emulator reader to consume messages forwarded by the bridge (with SASL)
+	dialer := getEventHubsDialer()
 	kafkaReaderGroupID := "test-mqtt-to-eventhubs-read-group-" + testIDStr
 	kafkaReader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     []string{eventHubsEmulatorBroker},
