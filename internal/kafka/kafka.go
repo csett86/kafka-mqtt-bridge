@@ -314,7 +314,7 @@ func (c *Client) FetchMessage(ctx context.Context) (*kafka.Message, error) {
 				msg.Value = decoded
 				c.logger.Debug("Deserialized Avro message",
 					zap.String("topic", msg.Topic),
-					zap.Int("originalSize", len(decoded)),
+					zap.Int("deserializedSize", len(decoded)),
 				)
 			}
 			return &msg, nil
@@ -382,7 +382,7 @@ func (c *Client) ReadMessage(ctx context.Context) (*kafka.Message, error) {
 				msg.Value = decoded
 				c.logger.Debug("Deserialized Avro message",
 					zap.String("topic", msg.Topic),
-					zap.Int("originalSize", len(decoded)),
+					zap.Int("deserializedSize", len(decoded)),
 				)
 			}
 			return &msg, nil
