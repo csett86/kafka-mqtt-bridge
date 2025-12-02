@@ -8,6 +8,7 @@ import (
 
 	pahomqtt "github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/csett86/kafka-mqtt-bridge/internal/avro"
 	"github.com/csett86/kafka-mqtt-bridge/internal/kafka"
@@ -132,8 +133,8 @@ func (b *Bridge) initializeAvro(ctx context.Context) error {
 		return nil
 	}
 
-	// Create Azure credential
-	var cred *azidentity.ClientSecretCredential
+	// Create Azure credential if explicitly configured, otherwise use default
+	var cred azcore.TokenCredential
 	var err error
 	if cfg.TenantID != "" && cfg.ClientID != "" && cfg.ClientSecret != "" {
 		cred, err = azidentity.NewClientSecretCredential(cfg.TenantID, cfg.ClientID, cfg.ClientSecret, nil)

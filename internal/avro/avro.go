@@ -64,7 +64,7 @@ func NewSerializer(ctx context.Context, cfg SerializerConfig, logger *zap.Logger
 		if cfg.AutoRegisterSchema {
 			schema, err = cfg.SchemaRegistryClient.RegisterSchema(ctx, cfg.SchemaName, cfg.SchemaContent, schemaregistry.FormatAvro)
 		} else {
-			// Just create the codec locally, schema must already exist in registry
+			// Fetch schema from registry - it must already exist
 			schema, err = cfg.SchemaRegistryClient.GetLatestSchema(ctx, cfg.SchemaName)
 		}
 		if err != nil {

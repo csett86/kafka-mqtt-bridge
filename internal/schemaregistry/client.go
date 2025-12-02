@@ -67,7 +67,7 @@ type ClientConfig struct {
 
 // Client is a client for Azure Event Hubs Schema Registry
 type Client struct {
-	endpoint       string
+	namespace      string
 	groupName      string
 	credential     azcore.TokenCredential
 	httpClient     *http.Client
@@ -104,11 +104,8 @@ func NewClient(cfg ClientConfig, logger *zap.Logger) (*Client, error) {
 		timeout = defaultTimeout
 	}
 
-	// Construct the endpoint URL
-	endpoint := fmt.Sprintf("https://%s/$schemagroups", cfg.FullyQualifiedNamespace)
-
 	client := &Client{
-		endpoint:        endpoint,
+		namespace:       cfg.FullyQualifiedNamespace,
 		groupName:       cfg.GroupName,
 		credential:      credential,
 		httpClient:      &http.Client{Timeout: timeout},
@@ -156,8 +153,8 @@ func (c *Client) RegisterSchema(ctx context.Context, schemaName, content string,
 
 	// Register schema with the API
 	// PUT /$schemagroups/{groupName}/schemas/{schemaName}:register?api-version=2022-10
-	url := fmt.Sprintf("%s/%s/schemas/%s:register?api-version=%s",
-		c.endpoint, c.groupName, schemaName, apiVersion)
+	url := fmt.Sprintf("https://%s/$schemagroups/%s/schemas/%s:register?api-version=%s",
+		c.namespace, c.groupName, schemaName, apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, strings.NewReader(content))
 	if err != nil {
@@ -243,9 +240,7 @@ func (c *Client) GetSchemaByID(ctx context.Context, schemaID string) (*Schema, e
 
 	// GET /$schemagroups/$schemas/{schemaId}?api-version=2022-10
 	url := fmt.Sprintf("https://%s/$schemagroups/$schemas/%s?api-version=%s",
-		strings.TrimPrefix(strings.TrimPrefix(c.endpoint, "https://"), "http://"),
-		schemaID, apiVersion)
-	url = strings.Replace(url, "/$schemagroups/$schemagroups", "/$schemagroups", 1)
+		c.namespace, schemaID, apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -322,8 +317,8 @@ func (c *Client) GetSchemaByID(ctx context.Context, schemaID string) (*Schema, e
 // GetSchemaByNameAndVersion retrieves a schema by its name and version
 func (c *Client) GetSchemaByNameAndVersion(ctx context.Context, schemaName string, version int) (*Schema, error) {
 	// GET /$schemagroups/{groupName}/schemas/{schemaName}/versions/{versionNumber}?api-version=2022-10
-	url := fmt.Sprintf("%s/%s/schemas/%s/versions/%d?api-version=%s",
-		c.endpoint, c.groupName, schemaName, version, apiVersion)
+	url := fmt.Sprintf("https://%s/$schemagroups/%s/schemas/%s/versions/%d?api-version=%s",
+		c.namespace, c.groupName, schemaName, version, apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -383,8 +378,8 @@ func (c *Client) GetSchemaByNameAndVersion(ctx context.Context, schemaName strin
 // GetLatestSchema retrieves the latest version of a schema by its name
 func (c *Client) GetLatestSchema(ctx context.Context, schemaName string) (*Schema, error) {
 	// GET /$schemagroups/{groupName}/schemas/{schemaName}?api-version=2022-10
-	url := fmt.Sprintf("%s/%s/schemas/%s?api-version=%s",
-		c.endpoint, c.groupName, schemaName, apiVersion)
+	url := fmt.Sprintf("https://%s/$schemagroups/%s/schemas/%s?api-version=%s",
+		c.namespace, c.groupName, schemaName, apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -451,8 +446,8 @@ func (c *Client) GetLatestSchema(ctx context.Context, schemaName string) (*Schem
 // ListSchemaVersions lists all versions of a schema
 func (c *Client) ListSchemaVersions(ctx context.Context, schemaName string) ([]int, error) {
 	// GET /$schemagroups/{groupName}/schemas/{schemaName}/versions?api-version=2022-10
-	url := fmt.Sprintf("%s/%s/schemas/%s/versions?api-version=%s",
-		c.endpoint, c.groupName, schemaName, apiVersion)
+	url := fmt.Sprintf("https://%s/$schemagroups/%s/schemas/%s/versions?api-version=%s",
+		c.namespace, c.groupName, schemaName, apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
