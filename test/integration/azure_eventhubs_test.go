@@ -236,34 +236,14 @@ bridge:
 	t.Logf("Built bridge binary at: %s", binaryPath)
 
 	// Setup MQTT subscriber to receive messages from the bridge
-	receivedMessages := make(chan string, 10)
+	receivedMessages := make(chan string, 100) // Large buffer for old messages
 	mqttClient := setupMQTTSubscriber(t, mqttTopic, receivedMessages)
 	defer mqttClient.Disconnect(250)
 
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
-	// Publish message to Event Hubs Emulator using direct connection with SASL
-	dialer := getEventHubsDialer()
-	leaderConn, err := dialer.DialLeader(ctx, "tcp", eventHubsEmulatorBroker, eventHubsEmulatorTopic, 0)
-	if err != nil {
-		t.Fatalf("Failed to connect to Event Hubs Emulator: %v", err)
-	}
-
-	leaderConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	_, err = leaderConn.WriteMessages(kafka.Message{
-		Key:   []byte("test-key"),
-		Value: []byte(testMessage),
-	})
-	leaderConn.Close()
-
-	if err != nil {
-		t.Fatalf("Failed to write message to Event Hubs Emulator: %v", err)
-	}
-
-	t.Logf("Published message to Event Hubs Emulator topic %s: %s", eventHubsEmulatorTopic, testMessage)
-
-	// Start the bridge binary
+	// Start the bridge binary FIRST
 	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
 	bridgeCmd.Dir = tmpDir
 	bridgeCmd.Stdout = os.Stdout
@@ -283,19 +263,45 @@ bridge:
 
 	t.Log("Event Hubs Emulator bridge binary started, waiting for it to initialize...")
 
-	// Wait for the message to appear on MQTT (forwarded by the bridge)
-	select {
-	case received := <-receivedMessages:
-		if received != testMessage {
-			t.Errorf("Message mismatch: got %q, want %q", received, testMessage)
-		} else {
-			t.Logf("Successfully received Event Hubs Emulator bridged message on MQTT: %s", received)
-		}
-	case <-time.After(30 * time.Second):
-		t.Error("Timeout waiting for Event Hubs Emulator bridged message on MQTT")
+	// Give bridge time to start and connect
+	time.Sleep(3 * time.Second)
+
+	// Publish message to Event Hubs Emulator AFTER bridge is running
+	dialer := getEventHubsDialer()
+	leaderConn, err := dialer.DialLeader(ctx, "tcp", eventHubsEmulatorBroker, eventHubsEmulatorTopic, 0)
+	if err != nil {
+		t.Fatalf("Failed to connect to Event Hubs Emulator: %v", err)
 	}
 
-	t.Log("Successfully tested Event Hubs Emulator to MQTT bridge flow")
+	leaderConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_, err = leaderConn.WriteMessages(kafka.Message{
+		Key:   []byte("test-key"),
+		Value: []byte(testMessage),
+	})
+	leaderConn.Close()
+
+	if err != nil {
+		t.Fatalf("Failed to write message to Event Hubs Emulator: %v", err)
+	}
+
+	t.Logf("Published message to Event Hubs Emulator topic %s: %s", eventHubsEmulatorTopic, testMessage)
+
+	// Wait for the specific message to appear on MQTT (bridge may forward old messages first)
+	timeout := time.After(30 * time.Second)
+	for {
+		select {
+		case received := <-receivedMessages:
+			if received == testMessage {
+				t.Logf("Successfully received Event Hubs Emulator bridged message on MQTT: %s", received)
+				t.Log("Successfully tested Event Hubs Emulator to MQTT bridge flow")
+				return
+			}
+			t.Logf("Received older message, waiting for test message: %s", received)
+		case <-timeout:
+			t.Error("Timeout waiting for Event Hubs Emulator bridged message on MQTT")
+			return
+		}
+	}
 }
 
 // TestMQTTToEventHubsEmulatorBridge tests the MQTT→Event Hubs Emulator direction
@@ -391,18 +397,18 @@ bridge:
 	// Give bridge time to start and subscribe
 	time.Sleep(3 * time.Second)
 
-	// Setup Event Hubs Emulator reader to consume messages forwarded by the bridge (with SASL)
+	// Setup Event Hubs Emulator reader to consume messages forwarded by the bridge
+	// Using partition reader to read from a specific offset
 	dialer := getEventHubsDialer()
-	kafkaReaderGroupID := "test-mqtt-to-eventhubs-read-group-" + testIDStr
 	kafkaReader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     []string{eventHubsEmulatorBroker},
 		Topic:       eventHubsEmulatorTopic,
-		GroupID:     kafkaReaderGroupID,
+		Partition:   0,
 		Dialer:      dialer,
-		StartOffset: kafka.FirstOffset,
+		StartOffset: kafka.LastOffset,
 		MinBytes:    1,
 		MaxBytes:    10e6,
-		MaxWait:     100 * time.Millisecond,
+		MaxWait:     1 * time.Second,
 	})
 	defer kafkaReader.Close()
 
@@ -419,20 +425,22 @@ bridge:
 	t.Logf("Published message to MQTT topic %s: %s", mqttTopic, testMessage)
 
 	// Wait for the message to appear on Event Hubs Emulator (forwarded by the bridge)
+	// Scan messages until we find ours or timeout
 	readCtx, readCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer readCancel()
 
-	msg, err := kafkaReader.ReadMessage(readCtx)
-	if err != nil {
-		t.Fatalf("Failed to read message from Event Hubs Emulator: %v", err)
-	}
+	for {
+		msg, err := kafkaReader.ReadMessage(readCtx)
+		if err != nil {
+			t.Fatalf("Failed to read message from Event Hubs Emulator: %v", err)
+		}
 
-	received := string(msg.Value)
-	if received != testMessage {
-		t.Errorf("Message mismatch: got %q, want %q", received, testMessage)
-	} else {
-		t.Logf("Successfully received bridged message on Event Hubs Emulator: %s", received)
+		received := string(msg.Value)
+		if received == testMessage {
+			t.Logf("Successfully received bridged message on Event Hubs Emulator: %s", received)
+			t.Log("Successfully tested MQTT to Event Hubs Emulator bridge flow")
+			return
+		}
+		t.Logf("Received different message, waiting for test message: %s", received)
 	}
-
-	t.Log("Successfully tested MQTT to Event Hubs Emulator bridge flow")
 }
