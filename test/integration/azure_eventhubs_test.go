@@ -1,10 +1,11 @@
 // Package integration provides integration tests for the kafka-mqtt-bridge.
-// This file contains tests for Azure Event Hubs support with SAS token authentication.
+// This file contains tests for Azure Event Hubs Emulator support with SASL/PLAIN authentication.
+// The tests use the Azure Event Hubs Emulator which is started via docker-compose.
 package integration
 
 import (
 	"context"
-	"crypto/tls"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,26 +18,47 @@ import (
 	"github.com/segmentio/kafka-go/sasl/plain"
 )
 
-// Azure Event Hubs test configuration - must be set via environment variables
-// These tests are skipped if the environment variables are not set
+// Azure Event Hubs Emulator configuration
+// The emulator is started as part of the docker-compose.integration.yml
 var (
-	// Azure Event Hubs namespace endpoint (e.g., "your-namespace.servicebus.windows.net:9093")
-	azureEventHubsBroker = os.Getenv("TEST_AZURE_EVENTHUBS_BROKER")
-	// Azure Event Hubs connection string for SAS authentication
-	azureEventHubsConnectionString = os.Getenv("TEST_AZURE_EVENTHUBS_CONNECTION_STRING")
-	// Azure Event Hubs topic (Event Hub name)
-	azureEventHubsTopic = os.Getenv("TEST_AZURE_EVENTHUBS_TOPIC")
+	// Event Hubs Emulator Kafka endpoint (port 9094 is mapped to the emulator's internal 9092)
+	eventHubsEmulatorBroker = getEnv("TEST_EVENTHUBS_EMULATOR_BROKER", "localhost:9094")
+	// Event Hubs Emulator connection string for SASL authentication
+	// Format: Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;
+	eventHubsEmulatorConnectionString = getEnv("TEST_EVENTHUBS_EMULATOR_CONNECTION_STRING",
+		"Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;")
+	// Event Hub name (defined in test/eventhubs-emulator-config.json)
+	eventHubsEmulatorTopic = getEnv("TEST_EVENTHUBS_EMULATOR_TOPIC", "eh1")
 )
 
-// TestAzureEventHubsSASConnection tests basic connectivity to Azure Event Hubs
-// using SAS token authentication over the Kafka protocol.
-// This test requires the following environment variables:
-//   - TEST_AZURE_EVENTHUBS_BROKER: Event Hubs namespace endpoint (e.g., "namespace.servicebus.windows.net:9093")
-//   - TEST_AZURE_EVENTHUBS_CONNECTION_STRING: Full connection string with SAS key
-//   - TEST_AZURE_EVENTHUBS_TOPIC: Event Hub name to use for testing
-func TestAzureEventHubsSASConnection(t *testing.T) {
-	if azureEventHubsBroker == "" || azureEventHubsConnectionString == "" || azureEventHubsTopic == "" {
-		t.Skip("Skipping Azure Event Hubs test: TEST_AZURE_EVENTHUBS_BROKER, TEST_AZURE_EVENTHUBS_CONNECTION_STRING, and TEST_AZURE_EVENTHUBS_TOPIC environment variables must be set")
+// checkEventHubsEmulatorConnection checks if the Event Hubs Emulator is available
+func checkEventHubsEmulatorConnection() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Create dialer with SASL PLAIN authentication
+	dialer := &kafka.Dialer{
+		Timeout:   10 * time.Second,
+		DualStack: true,
+		SASLMechanism: plain.Mechanism{
+			Username: "$ConnectionString",
+			Password: eventHubsEmulatorConnectionString,
+		},
+	}
+
+	conn, err := dialer.DialContext(ctx, "tcp", eventHubsEmulatorBroker)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Event Hubs Emulator: %w", err)
+	}
+	defer conn.Close()
+	return nil
+}
+
+// TestEventHubsEmulatorConnection tests basic connectivity to Azure Event Hubs Emulator
+// using SASL/PLAIN authentication over the Kafka protocol.
+func TestEventHubsEmulatorConnection(t *testing.T) {
+	if err := checkEventHubsEmulatorConnection(); err != nil {
+		t.Skipf("Skipping Event Hubs Emulator test: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -46,23 +68,20 @@ func TestAzureEventHubsSASConnection(t *testing.T) {
 	dialer := &kafka.Dialer{
 		Timeout:   10 * time.Second,
 		DualStack: true,
-		TLS: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
 		SASLMechanism: plain.Mechanism{
 			Username: "$ConnectionString",
-			Password: azureEventHubsConnectionString,
+			Password: eventHubsEmulatorConnectionString,
 		},
 	}
 
-	// Connect to Azure Event Hubs
-	conn, err := dialer.DialContext(ctx, "tcp", azureEventHubsBroker)
+	// Connect to Event Hubs Emulator
+	conn, err := dialer.DialContext(ctx, "tcp", eventHubsEmulatorBroker)
 	if err != nil {
-		t.Fatalf("Failed to connect to Azure Event Hubs: %v", err)
+		t.Fatalf("Failed to connect to Event Hubs Emulator: %v", err)
 	}
 	defer conn.Close()
 
-	t.Log("Successfully connected to Azure Event Hubs with SAS authentication")
+	t.Log("Successfully connected to Event Hubs Emulator with SASL authentication")
 
 	// Verify connection by reading broker metadata
 	brokers, err := conn.Brokers()
@@ -70,16 +89,16 @@ func TestAzureEventHubsSASConnection(t *testing.T) {
 		t.Fatalf("Failed to get broker metadata: %v", err)
 	}
 
-	t.Logf("Connected to Azure Event Hubs, found %d broker(s)", len(brokers))
+	t.Logf("Connected to Event Hubs Emulator, found %d broker(s)", len(brokers))
 	for _, b := range brokers {
 		t.Logf("  Broker: %s:%d", b.Host, b.Port)
 	}
 }
 
-// TestAzureEventHubsProduceConsume tests message round-trip through Azure Event Hubs
-func TestAzureEventHubsProduceConsume(t *testing.T) {
-	if azureEventHubsBroker == "" || azureEventHubsConnectionString == "" || azureEventHubsTopic == "" {
-		t.Skip("Skipping Azure Event Hubs test: TEST_AZURE_EVENTHUBS_BROKER, TEST_AZURE_EVENTHUBS_CONNECTION_STRING, and TEST_AZURE_EVENTHUBS_TOPIC environment variables must be set")
+// TestEventHubsEmulatorProduceConsume tests message round-trip through Event Hubs Emulator
+func TestEventHubsEmulatorProduceConsume(t *testing.T) {
+	if err := checkEventHubsEmulatorConnection(); err != nil {
+		t.Skipf("Skipping Event Hubs Emulator test: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -87,26 +106,23 @@ func TestAzureEventHubsProduceConsume(t *testing.T) {
 
 	testID := time.Now().UnixNano()
 	testIDStr := strconv.FormatInt(testID, 10)
-	testMessage := "azure-eventhubs-test-message-" + testIDStr
+	testMessage := "eventhubs-emulator-test-message-" + testIDStr
 
-	// Create transport with SASL PLAIN authentication
+	// Create transport with SASL PLAIN authentication (no TLS for emulator)
 	transport := &kafka.Transport{
-		TLS: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
 		SASL: plain.Mechanism{
 			Username: "$ConnectionString",
-			Password: azureEventHubsConnectionString,
+			Password: eventHubsEmulatorConnectionString,
 		},
 	}
 
-	// Create writer for Azure Event Hubs
+	// Create writer for Event Hubs Emulator
 	writer := &kafka.Writer{
-		Addr:      kafka.TCP(azureEventHubsBroker),
-		Topic:     azureEventHubsTopic,
+		Addr:      kafka.TCP(eventHubsEmulatorBroker),
+		Topic:     eventHubsEmulatorTopic,
 		Balancer:  &kafka.LeastBytes{},
 		Transport: transport,
-		// Azure Event Hubs doesn't support auto topic creation
+		// Event Hubs Emulator doesn't support auto topic creation (topics defined in config)
 		AllowAutoTopicCreation: false,
 		BatchTimeout:           100 * time.Millisecond,
 		WriteTimeout:           10 * time.Second,
@@ -120,31 +136,28 @@ func TestAzureEventHubsProduceConsume(t *testing.T) {
 		Value: []byte(testMessage),
 	})
 	if err != nil {
-		t.Fatalf("Failed to write message to Azure Event Hubs: %v", err)
+		t.Fatalf("Failed to write message to Event Hubs Emulator: %v", err)
 	}
 
-	t.Logf("Published message to Azure Event Hubs topic %s: %s", azureEventHubsTopic, testMessage)
+	t.Logf("Published message to Event Hubs Emulator topic %s: %s", eventHubsEmulatorTopic, testMessage)
 
-	// Create dialer for reader
+	// Create dialer for reader (no TLS for emulator)
 	dialer := &kafka.Dialer{
 		Timeout:   10 * time.Second,
 		DualStack: true,
-		TLS: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
 		SASLMechanism: plain.Mechanism{
 			Username: "$ConnectionString",
-			Password: azureEventHubsConnectionString,
+			Password: eventHubsEmulatorConnectionString,
 		},
 	}
 
-	// Create reader for Azure Event Hubs
+	// Create reader for Event Hubs Emulator
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:     []string{azureEventHubsBroker},
-		Topic:       azureEventHubsTopic,
-		GroupID:     "test-azure-group-" + testIDStr,
+		Brokers:     []string{eventHubsEmulatorBroker},
+		Topic:       eventHubsEmulatorTopic,
+		GroupID:     "test-eventhubs-group-" + testIDStr,
 		Dialer:      dialer,
-		StartOffset: kafka.LastOffset, // Start from end to get our test message
+		StartOffset: kafka.FirstOffset, // Start from beginning for emulator
 		MinBytes:    1,
 		MaxBytes:    10e6,
 		MaxWait:     100 * time.Millisecond,
@@ -157,29 +170,29 @@ func TestAzureEventHubsProduceConsume(t *testing.T) {
 
 	msg, err := reader.ReadMessage(readCtx)
 	if err != nil {
-		t.Fatalf("Failed to read message from Azure Event Hubs: %v", err)
+		t.Fatalf("Failed to read message from Event Hubs Emulator: %v", err)
 	}
 
 	received := string(msg.Value)
 	if received != testMessage {
 		t.Errorf("Message mismatch: got %q, want %q", received, testMessage)
 	} else {
-		t.Logf("Successfully received message from Azure Event Hubs: %s", received)
+		t.Logf("Successfully received message from Event Hubs Emulator: %s", received)
 	}
 
-	t.Log("Successfully tested Azure Event Hubs produce/consume round-trip")
+	t.Log("Successfully tested Event Hubs Emulator produce/consume round-trip")
 }
 
-// TestKafkaToMQTTBridgeWithAzureEventHubs tests the bridge component with Azure Event Hubs
+// TestKafkaToMQTTBridgeWithEventHubsEmulator tests the bridge component with Event Hubs Emulator
 // as the Kafka backend using the built binary.
-func TestKafkaToMQTTBridgeWithAzureEventHubs(t *testing.T) {
-	if azureEventHubsBroker == "" || azureEventHubsConnectionString == "" || azureEventHubsTopic == "" {
-		t.Skip("Skipping Azure Event Hubs bridge test: TEST_AZURE_EVENTHUBS_BROKER, TEST_AZURE_EVENTHUBS_CONNECTION_STRING, and TEST_AZURE_EVENTHUBS_TOPIC environment variables must be set")
+func TestKafkaToMQTTBridgeWithEventHubsEmulator(t *testing.T) {
+	if err := checkEventHubsEmulatorConnection(); err != nil {
+		t.Skipf("Skipping Event Hubs Emulator bridge test: %v", err)
 	}
 
 	// Check if MQTT broker is available
 	if err := checkMQTTConnection(); err != nil {
-		t.Skipf("Skipping Azure Event Hubs bridge test: MQTT not available: %v", err)
+		t.Skipf("Skipping Event Hubs Emulator bridge test: MQTT not available: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -188,29 +201,29 @@ func TestKafkaToMQTTBridgeWithAzureEventHubs(t *testing.T) {
 	// Use unique IDs for this test
 	testID := time.Now().UnixNano()
 	testIDStr := strconv.FormatInt(testID, 10)
-	mqttTopic := "mqtt/azure/bridge/test/" + testIDStr
-	testMessage := "azure-bridge-test-message-" + testIDStr
+	mqttTopic := "mqtt/eventhubs/bridge/test/" + testIDStr
+	testMessage := "eventhubs-bridge-test-message-" + testIDStr
 
 	projectRoot := getProjectRoot()
 
 	// Build explicit configuration values
-	kafkaGroupID := "test-azure-bridge-group-" + testIDStr
-	mqttClientID := "test-azure-bridge-" + testIDStr
+	kafkaGroupID := "test-eventhubs-bridge-group-" + testIDStr
+	mqttClientID := "test-eventhubs-bridge-" + testIDStr
 	mqttPortStr := strconv.Itoa(mqttPort)
 
-	// Create a temporary config file for the bridge with Azure Event Hubs configuration
+	// Create a temporary config file for the bridge with Event Hubs Emulator configuration
+	// Note: No TLS for emulator, SASL with $ConnectionString username
 	configContent := `
 kafka:
-  broker: "` + azureEventHubsBroker + `"
+  broker: "` + eventHubsEmulatorBroker + `"
   group_id: "` + kafkaGroupID + `"
   sasl:
     enabled: true
     mechanism: "PLAIN"
     username: "$ConnectionString"
-    password: "` + azureEventHubsConnectionString + `"
+    password: "` + eventHubsEmulatorConnectionString + `"
   tls:
-    enabled: true
-    insecure_skip_verify: false
+    enabled: false
 
 mqtt:
   broker: "` + mqttBroker + `"
@@ -218,11 +231,11 @@ mqtt:
   client_id: "` + mqttClientID + `"
 
 bridge:
-  name: "test-azure-bridge"
+  name: "test-eventhubs-bridge"
   log_level: "debug"
   buffer_size: 100
   kafka_to_mqtt:
-    source_topic: "` + azureEventHubsTopic + `"
+    source_topic: "` + eventHubsEmulatorTopic + `"
     dest_topic: "` + mqttTopic + `"
 `
 
@@ -233,7 +246,7 @@ bridge:
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
-	t.Logf("Created Azure Event Hubs config file at: %s", configPath)
+	t.Logf("Created Event Hubs Emulator config file at: %s", configPath)
 
 	// Build the bridge binary
 	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
@@ -253,21 +266,18 @@ bridge:
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
-	// Create transport with SASL PLAIN authentication for writing test message
+	// Create transport with SASL PLAIN authentication for writing test message (no TLS for emulator)
 	transport := &kafka.Transport{
-		TLS: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
 		SASL: plain.Mechanism{
 			Username: "$ConnectionString",
-			Password: azureEventHubsConnectionString,
+			Password: eventHubsEmulatorConnectionString,
 		},
 	}
 
-	// Setup Azure Event Hubs writer and publish message BEFORE starting bridge
+	// Setup Event Hubs Emulator writer and publish message BEFORE starting bridge
 	kafkaWriter := &kafka.Writer{
-		Addr:                   kafka.TCP(azureEventHubsBroker),
-		Topic:                  azureEventHubsTopic,
+		Addr:                   kafka.TCP(eventHubsEmulatorBroker),
+		Topic:                  eventHubsEmulatorTopic,
 		Balancer:               &kafka.LeastBytes{},
 		Transport:              transport,
 		AllowAutoTopicCreation: false,
@@ -277,16 +287,16 @@ bridge:
 	}
 	defer kafkaWriter.Close()
 
-	// Publish message to Azure Event Hubs
+	// Publish message to Event Hubs Emulator
 	err := kafkaWriter.WriteMessages(ctx, kafka.Message{
 		Key:   []byte("test-key"),
 		Value: []byte(testMessage),
 	})
 	if err != nil {
-		t.Fatalf("Failed to write message to Azure Event Hubs: %v", err)
+		t.Fatalf("Failed to write message to Event Hubs Emulator: %v", err)
 	}
 
-	t.Logf("Published message to Azure Event Hubs topic %s: %s", azureEventHubsTopic, testMessage)
+	t.Logf("Published message to Event Hubs Emulator topic %s: %s", eventHubsEmulatorTopic, testMessage)
 
 	// Start the bridge binary
 	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
@@ -306,7 +316,7 @@ bridge:
 		}
 	}()
 
-	t.Log("Azure Event Hubs bridge binary started, waiting for it to initialize...")
+	t.Log("Event Hubs Emulator bridge binary started, waiting for it to initialize...")
 
 	// Wait for the message to appear on MQTT (forwarded by the bridge)
 	select {
@@ -314,24 +324,24 @@ bridge:
 		if received != testMessage {
 			t.Errorf("Message mismatch: got %q, want %q", received, testMessage)
 		} else {
-			t.Logf("Successfully received Azure Event Hubs bridged message on MQTT: %s", received)
+			t.Logf("Successfully received Event Hubs Emulator bridged message on MQTT: %s", received)
 		}
 	case <-time.After(30 * time.Second):
-		t.Error("Timeout waiting for Azure Event Hubs bridged message on MQTT")
+		t.Error("Timeout waiting for Event Hubs Emulator bridged message on MQTT")
 	}
 
-	t.Log("Successfully tested Azure Event Hubs to MQTT bridge flow")
+	t.Log("Successfully tested Event Hubs Emulator to MQTT bridge flow")
 }
 
-// TestMQTTToAzureEventHubsBridge tests the MQTT→Azure Event Hubs direction
-func TestMQTTToAzureEventHubsBridge(t *testing.T) {
-	if azureEventHubsBroker == "" || azureEventHubsConnectionString == "" || azureEventHubsTopic == "" {
-		t.Skip("Skipping Azure Event Hubs bridge test: TEST_AZURE_EVENTHUBS_BROKER, TEST_AZURE_EVENTHUBS_CONNECTION_STRING, and TEST_AZURE_EVENTHUBS_TOPIC environment variables must be set")
+// TestMQTTToEventHubsEmulatorBridge tests the MQTT→Event Hubs Emulator direction
+func TestMQTTToEventHubsEmulatorBridge(t *testing.T) {
+	if err := checkEventHubsEmulatorConnection(); err != nil {
+		t.Skipf("Skipping Event Hubs Emulator bridge test: %v", err)
 	}
 
 	// Check if MQTT broker is available
 	if err := checkMQTTConnection(); err != nil {
-		t.Skipf("Skipping Azure Event Hubs bridge test: MQTT not available: %v", err)
+		t.Skipf("Skipping Event Hubs Emulator bridge test: MQTT not available: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -340,29 +350,29 @@ func TestMQTTToAzureEventHubsBridge(t *testing.T) {
 	// Use unique IDs for this test
 	testID := time.Now().UnixNano()
 	testIDStr := strconv.FormatInt(testID, 10)
-	mqttTopic := "mqtt/to-azure/test/" + testIDStr
-	testMessage := "mqtt-to-azure-test-message-" + testIDStr
+	mqttTopic := "mqtt/to-eventhubs/test/" + testIDStr
+	testMessage := "mqtt-to-eventhubs-test-message-" + testIDStr
 
 	projectRoot := getProjectRoot()
 
 	// Build explicit configuration values
-	kafkaGroupID := "test-mqtt-to-azure-group-" + testIDStr
-	mqttClientID := "test-mqtt-to-azure-" + testIDStr
+	kafkaGroupID := "test-mqtt-to-eventhubs-group-" + testIDStr
+	mqttClientID := "test-mqtt-to-eventhubs-" + testIDStr
 	mqttPortStr := strconv.Itoa(mqttPort)
 
-	// Create a temporary config file for the bridge (MQTT→Azure Event Hubs)
+	// Create a temporary config file for the bridge (MQTT→Event Hubs Emulator)
+	// Note: No TLS for emulator
 	configContent := `
 kafka:
-  broker: "` + azureEventHubsBroker + `"
+  broker: "` + eventHubsEmulatorBroker + `"
   group_id: "` + kafkaGroupID + `"
   sasl:
     enabled: true
     mechanism: "PLAIN"
     username: "$ConnectionString"
-    password: "` + azureEventHubsConnectionString + `"
+    password: "` + eventHubsEmulatorConnectionString + `"
   tls:
-    enabled: true
-    insecure_skip_verify: false
+    enabled: false
 
 mqtt:
   broker: "` + mqttBroker + `"
@@ -370,12 +380,12 @@ mqtt:
   client_id: "` + mqttClientID + `"
 
 bridge:
-  name: "test-mqtt-to-azure"
+  name: "test-mqtt-to-eventhubs"
   log_level: "debug"
   buffer_size: 100
   mqtt_to_kafka:
     source_topic: "` + mqttTopic + `"
-    dest_topic: "` + azureEventHubsTopic + `"
+    dest_topic: "` + eventHubsEmulatorTopic + `"
 `
 
 	// Create temporary config file
@@ -385,7 +395,7 @@ bridge:
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
-	t.Logf("Created MQTT to Azure Event Hubs config file at: %s", configPath)
+	t.Logf("Created MQTT to Event Hubs Emulator config file at: %s", configPath)
 
 	// Build the bridge binary
 	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
@@ -413,32 +423,29 @@ bridge:
 		}
 	}()
 
-	t.Log("MQTT to Azure Event Hubs bridge binary started, waiting for it to initialize...")
+	t.Log("MQTT to Event Hubs Emulator bridge binary started, waiting for it to initialize...")
 
 	// Give bridge time to start and subscribe
 	time.Sleep(3 * time.Second)
 
-	// Create dialer for Azure Event Hubs reader
+	// Create dialer for Event Hubs Emulator reader (no TLS for emulator)
 	dialer := &kafka.Dialer{
 		Timeout:   10 * time.Second,
 		DualStack: true,
-		TLS: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
 		SASLMechanism: plain.Mechanism{
 			Username: "$ConnectionString",
-			Password: azureEventHubsConnectionString,
+			Password: eventHubsEmulatorConnectionString,
 		},
 	}
 
-	// Setup Azure Event Hubs reader to consume messages forwarded by the bridge
-	kafkaReaderGroupID := "test-mqtt-to-azure-read-group-" + testIDStr
+	// Setup Event Hubs Emulator reader to consume messages forwarded by the bridge
+	kafkaReaderGroupID := "test-mqtt-to-eventhubs-read-group-" + testIDStr
 	kafkaReader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:     []string{azureEventHubsBroker},
-		Topic:       azureEventHubsTopic,
+		Brokers:     []string{eventHubsEmulatorBroker},
+		Topic:       eventHubsEmulatorTopic,
 		GroupID:     kafkaReaderGroupID,
 		Dialer:      dialer,
-		StartOffset: kafka.LastOffset,
+		StartOffset: kafka.FirstOffset,
 		MinBytes:    1,
 		MaxBytes:    10e6,
 		MaxWait:     100 * time.Millisecond,
@@ -449,7 +456,7 @@ bridge:
 	mqttPublisher := setupMQTTPublisher(t)
 	defer mqttPublisher.Disconnect(250)
 
-	// Publish message to MQTT - the bridge should forward it to Azure Event Hubs
+	// Publish message to MQTT - the bridge should forward it to Event Hubs Emulator
 	token := mqttPublisher.Publish(mqttTopic, 1, false, []byte(testMessage))
 	if token.Wait() && token.Error() != nil {
 		t.Fatalf("Failed to publish message to MQTT: %v", token.Error())
@@ -457,21 +464,21 @@ bridge:
 
 	t.Logf("Published message to MQTT topic %s: %s", mqttTopic, testMessage)
 
-	// Wait for the message to appear on Azure Event Hubs (forwarded by the bridge)
+	// Wait for the message to appear on Event Hubs Emulator (forwarded by the bridge)
 	readCtx, readCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer readCancel()
 
 	msg, err := kafkaReader.ReadMessage(readCtx)
 	if err != nil {
-		t.Fatalf("Failed to read message from Azure Event Hubs: %v", err)
+		t.Fatalf("Failed to read message from Event Hubs Emulator: %v", err)
 	}
 
 	received := string(msg.Value)
 	if received != testMessage {
 		t.Errorf("Message mismatch: got %q, want %q", received, testMessage)
 	} else {
-		t.Logf("Successfully received bridged message on Azure Event Hubs: %s", received)
+		t.Logf("Successfully received bridged message on Event Hubs Emulator: %s", received)
 	}
 
-	t.Log("Successfully tested MQTT to Azure Event Hubs bridge flow")
+	t.Log("Successfully tested MQTT to Event Hubs Emulator bridge flow")
 }

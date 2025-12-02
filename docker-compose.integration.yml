@@ -1,7 +1,41 @@
 # Docker Compose file for integration testing
-# Provides Kafka and MQTT (Mosquitto) brokers for testing
+# Provides Kafka, MQTT (Mosquitto), and Azure Event Hubs Emulator for testing
 
 services:
+  # Azure Event Hubs Emulator dependencies
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "10000"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  eventhubs-emulator:
+    image: mcr.microsoft.com/azure-messaging/eventhubs-emulator:latest
+    depends_on:
+      azurite:
+        condition: service_healthy
+    ports:
+      - "5672:5672"   # AMQP
+      - "9094:9092"   # Kafka (mapped to 9094 to avoid conflict with standard Kafka)
+    environment:
+      BLOB_SERVER: azurite
+      METADATA_SERVER: azurite
+      ACCEPT_EULA: "Y"
+    volumes:
+      - ./test/eventhubs-emulator-config.json:/Eventhubs_Emulator/ConfigFiles/Config.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5300/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     environment:
