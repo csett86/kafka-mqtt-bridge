@@ -100,14 +100,8 @@ schema_registry:
   # Schema group name in the registry
   group_name: "your-schema-group"
   
-  # Name of the schema to use for serialization
+  # Name of the schema to use for serialization (must already exist in the registry)
   schema_name: "your-schema-name"
-  
-  # Optional: Avro schema JSON content for auto-registration
-  # schema_content: '{"type":"record","name":"Event","fields":[{"name":"id","type":"string"}]}'
-  
-  # Enable automatic schema registration (default: false)
-  auto_register_schema: true
   
   # Enable schema caching (default: true)
   cache_enabled: true

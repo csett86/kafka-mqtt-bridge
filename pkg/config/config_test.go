@@ -28,7 +28,6 @@ schema_registry:
   fully_qualified_namespace: "test.servicebus.windows.net"
   group_name: "test-group"
   schema_name: "test-schema"
-  auto_register_schema: true
   cache_enabled: true
 `
 
@@ -58,9 +57,6 @@ schema_registry:
 	if cfg.SchemaRegistry.SchemaName != "test-schema" {
 		t.Errorf("SchemaRegistry.SchemaName = %q, want %q",
 			cfg.SchemaRegistry.SchemaName, "test-schema")
-	}
-	if !cfg.SchemaRegistry.AutoRegisterSchema {
-		t.Error("SchemaRegistry.AutoRegisterSchema = false, want true")
 	}
 	if cfg.SchemaRegistry.CacheEnabled == nil || !*cfg.SchemaRegistry.CacheEnabled {
 		t.Error("SchemaRegistry.CacheEnabled should be true")
@@ -148,44 +144,5 @@ schema_registry:
 	if cfg.SchemaRegistry.ClientSecret != "test-client-secret" {
 		t.Errorf("SchemaRegistry.ClientSecret = %q, want %q",
 			cfg.SchemaRegistry.ClientSecret, "test-client-secret")
-	}
-}
-
-func TestLoadConfigSchemaRegistryWithSchemaContent(t *testing.T) {
-	// Create a config file with inline schema content
-	schemaContent := `{"type":"record","name":"Test","fields":[{"name":"id","type":"string"}]}`
-	configContent := `
-kafka:
-  broker: "localhost:9092"
-
-mqtt:
-  broker: "localhost"
-
-bridge:
-  name: "test-bridge"
-
-schema_registry:
-  enabled: true
-  fully_qualified_namespace: "test.servicebus.windows.net"
-  group_name: "test-group"
-  schema_name: "test-schema"
-  schema_content: '` + schemaContent + `'
-`
-
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatalf("Failed to write config file: %v", err)
-	}
-
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-
-	// Verify schema content
-	if cfg.SchemaRegistry.SchemaContent != schemaContent {
-		t.Errorf("SchemaRegistry.SchemaContent = %q, want %q",
-			cfg.SchemaRegistry.SchemaContent, schemaContent)
 	}
 }

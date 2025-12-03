@@ -1,5 +1,5 @@
 // Package schemaregistry provides a client for Azure Event Hubs Schema Registry.
-// It supports registering, retrieving, and caching Avro schemas.
+// It supports retrieving and caching Avro schemas.
 package schemaregistry
 
 import (
@@ -75,10 +75,9 @@ type Client struct {
 	requestTimeout time.Duration
 
 	// Schema caching
-	cacheEnabled    bool
-	schemaByID      map[string]*Schema
-	schemaByContent map[string]*Schema // key: groupName:schemaName:content
-	cacheMu         sync.RWMutex
+	cacheEnabled bool
+	schemaByID   map[string]*Schema
+	cacheMu      sync.RWMutex
 }
 
 // NewClient creates a new Schema Registry client
@@ -105,15 +104,14 @@ func NewClient(cfg ClientConfig, logger *zap.Logger) (*Client, error) {
 	}
 
 	client := &Client{
-		namespace:       cfg.FullyQualifiedNamespace,
-		groupName:       cfg.GroupName,
-		credential:      credential,
-		httpClient:      &http.Client{Timeout: timeout},
-		logger:          logger,
-		requestTimeout:  timeout,
-		cacheEnabled:    cfg.CacheEnabled,
-		schemaByID:      make(map[string]*Schema),
-		schemaByContent: make(map[string]*Schema),
+		namespace:      cfg.FullyQualifiedNamespace,
+		groupName:      cfg.GroupName,
+		credential:     credential,
+		httpClient:     &http.Client{Timeout: timeout},
+		logger:         logger,
+		requestTimeout: timeout,
+		cacheEnabled:   cfg.CacheEnabled,
+		schemaByID:     make(map[string]*Schema),
 	}
 
 	logger.Info("Schema Registry client created",
@@ -134,95 +132,6 @@ func (c *Client) getAccessToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to get access token: %w", err)
 	}
 	return token.Token, nil
-}
-
-// RegisterSchema registers a schema with the Schema Registry and returns the schema ID.
-// If the schema already exists, it returns the existing schema's ID.
-func (c *Client) RegisterSchema(ctx context.Context, schemaName, content string, format string) (*Schema, error) {
-	// Check cache first
-	if c.cacheEnabled {
-		cacheKey := fmt.Sprintf("%s:%s:%s", c.groupName, schemaName, content)
-		c.cacheMu.RLock()
-		if schema, ok := c.schemaByContent[cacheKey]; ok {
-			c.cacheMu.RUnlock()
-			c.logger.Debug("Schema found in cache", zap.String("schemaName", schemaName), zap.String("id", schema.ID))
-			return schema, nil
-		}
-		c.cacheMu.RUnlock()
-	}
-
-	// Register schema with the API
-	// PUT /$schemagroups/{groupName}/schemas/{schemaName}:register?api-version=2022-10
-	url := fmt.Sprintf("https://%s/$schemagroups/%s/schemas/%s:register?api-version=%s",
-		c.namespace, c.groupName, schemaName, apiVersion)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, strings.NewReader(content))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	token, err := c.getAccessToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", fmt.Sprintf("application/json; serialization=%s", format))
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register schema: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return nil, fmt.Errorf("failed to register schema: status %d, body: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse schema ID from response headers
-	schemaID := resp.Header.Get("Schema-Id")
-	if schemaID == "" {
-		return nil, fmt.Errorf("schema ID not found in response headers")
-	}
-
-	versionStr := resp.Header.Get("Schema-Version")
-	version := 0
-	if versionStr != "" {
-		if v, err := strconv.Atoi(versionStr); err == nil {
-			version = v
-		}
-	}
-
-	schema := &Schema{
-		ID:         schemaID,
-		Content:    content,
-		Format:     format,
-		GroupName:  c.groupName,
-		SchemaName: schemaName,
-		Version:    version,
-	}
-
-	// Cache the schema
-	if c.cacheEnabled {
-		c.cacheMu.Lock()
-		c.schemaByID[schemaID] = schema
-		cacheKey := fmt.Sprintf("%s:%s:%s", c.groupName, schemaName, content)
-		c.schemaByContent[cacheKey] = schema
-		c.cacheMu.Unlock()
-	}
-
-	c.logger.Info("Schema registered",
-		zap.String("schemaName", schemaName),
-		zap.String("id", schemaID),
-		zap.Int("version", version),
-	)
-
-	return schema, nil
 }
 
 // GetSchemaByID retrieves a schema by its ID
@@ -491,6 +400,5 @@ func (c *Client) ClearCache() {
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
 	c.schemaByID = make(map[string]*Schema)
-	c.schemaByContent = make(map[string]*Schema)
 	c.logger.Debug("Schema cache cleared")
 }

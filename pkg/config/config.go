@@ -86,11 +86,6 @@ type SchemaRegistryConfig struct {
 	GroupName string `yaml:"group_name"`
 	// SchemaName is the name of the schema to use for serialization/deserialization
 	SchemaName string `yaml:"schema_name"`
-	// SchemaContent is the Avro schema JSON (optional - if not provided, will be fetched from registry)
-	SchemaContent string `yaml:"schema_content"`
-	// AutoRegisterSchema enables automatic schema registration (default: false)
-	// When enabled, the schema will be registered with the registry if it doesn't exist
-	AutoRegisterSchema bool `yaml:"auto_register_schema"`
 	// CacheEnabled enables schema caching (default: true)
 	CacheEnabled *bool `yaml:"cache_enabled"`
 	// TenantID is the Azure tenant ID for authentication (optional)

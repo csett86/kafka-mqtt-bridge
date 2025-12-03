@@ -165,8 +165,6 @@ func (b *Bridge) initializeAvro(ctx context.Context) error {
 		serializer, err := avro.NewSerializer(ctx, avro.SerializerConfig{
 			SchemaRegistryClient: srClient,
 			SchemaName:           cfg.SchemaName,
-			SchemaContent:        cfg.SchemaContent,
-			AutoRegisterSchema:   cfg.AutoRegisterSchema,
 		}, b.logger)
 		if err != nil {
 			return fmt.Errorf("failed to create Avro serializer: %w", err)
@@ -187,7 +185,6 @@ func (b *Bridge) initializeAvro(ctx context.Context) error {
 		zap.String("namespace", cfg.FullyQualifiedNamespace),
 		zap.String("groupName", cfg.GroupName),
 		zap.String("schemaName", cfg.SchemaName),
-		zap.Bool("autoRegister", cfg.AutoRegisterSchema),
 	)
 
 	return nil

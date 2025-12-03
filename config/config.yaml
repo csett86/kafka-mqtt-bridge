@@ -88,16 +88,8 @@ bridge:
 #   # Schema group name in the registry
 #   group_name: "your-schema-group"
 #   
-#   # Name of the schema to use for serialization
+#   # Name of the schema to use for serialization (must already exist in the registry)
 #   schema_name: "your-schema-name"
-#   
-#   # Optional: Avro schema JSON content for auto-registration
-#   # If not provided, schema must already exist in the registry
-#   # schema_content: '{"type":"record","name":"Event","fields":[{"name":"id","type":"string"},{"name":"data","type":"string"}]}'
-#   
-#   # Enable automatic schema registration (default: false)
-#   # When enabled, the schema will be registered with the registry if it doesn't exist
-#   # auto_register_schema: true
 #   
 #   # Enable schema caching (default: true)
 #   # cache_enabled: true

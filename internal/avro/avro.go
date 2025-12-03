@@ -35,10 +35,6 @@ type SerializerConfig struct {
 	SchemaRegistryClient *schemaregistry.Client
 	// SchemaName is the name of the schema to use for serialization
 	SchemaName string
-	// SchemaContent is the Avro schema JSON (optional - if not provided, will be fetched from registry)
-	SchemaContent string
-	// AutoRegisterSchema enables automatic schema registration (default: false)
-	AutoRegisterSchema bool
 }
 
 // NewSerializer creates a new Avro serializer
@@ -56,33 +52,8 @@ func NewSerializer(ctx context.Context, cfg SerializerConfig, logger *zap.Logger
 		logger:     logger,
 	}
 
-	// If schema content is provided, register or get schema
-	if cfg.SchemaContent != "" {
-		var schema *schemaregistry.Schema
-		var err error
-
-		if cfg.AutoRegisterSchema {
-			schema, err = cfg.SchemaRegistryClient.RegisterSchema(ctx, cfg.SchemaName, cfg.SchemaContent, schemaregistry.FormatAvro)
-		} else {
-			// Fetch schema from registry - it must already exist
-			schema, err = cfg.SchemaRegistryClient.GetLatestSchema(ctx, cfg.SchemaName)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to get/register schema: %w", err)
-		}
-
-		codec, err := goavro.NewCodec(schema.Content)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create Avro codec: %w", err)
-		}
-
-		s.schema = schema
-		s.codec = codec
-	}
-
 	logger.Info("Avro serializer created",
 		zap.String("schemaName", cfg.SchemaName),
-		zap.Bool("autoRegister", cfg.AutoRegisterSchema),
 	)
 
 	return s, nil
