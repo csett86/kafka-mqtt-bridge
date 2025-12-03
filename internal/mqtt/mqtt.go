@@ -244,23 +244,19 @@ func (c *Client) Publish(topic string, payload []byte) error {
 			lastErr = fmt.Errorf("publish timeout after %v", publishTimeout)
 		}
 
-		// Check if client is connected - if not, wait for reconnection
-		if !c.client.IsConnected() {
-			c.logger.Warn("MQTT publish failed, client not connected, retrying",
-				zap.Int("attempt", i+1),
-				zap.Int("maxRetries", maxPublishRetries),
-				zap.Duration("backoff", backoff),
-				zap.Error(lastErr),
-			)
-		} else {
-			// If connected but still failed, log and retry
-			c.logger.Warn("MQTT publish failed, retrying",
-				zap.Int("attempt", i+1),
-				zap.Int("maxRetries", maxPublishRetries),
-				zap.Duration("backoff", backoff),
-				zap.Error(lastErr),
-			)
+		// Skip delay on the last attempt
+		if i == maxPublishRetries-1 {
+			break
 		}
+
+		// Log retry attempt with connection status
+		c.logger.Warn("MQTT publish failed, retrying",
+			zap.Int("attempt", i+1),
+			zap.Int("maxRetries", maxPublishRetries),
+			zap.Duration("backoff", backoff),
+			zap.Bool("connected", c.client.IsConnected()),
+			zap.Error(lastErr),
+		)
 
 		time.Sleep(backoff)
 
