@@ -61,10 +61,19 @@ type MQTTConfig struct {
 	TLS          MQTTTLSConfig `yaml:"tls"`           // TLS configuration
 }
 
+// AvroConfig contains Avro serialization/deserialization settings for a topic
+type AvroConfig struct {
+	// SchemaGroup is the schema group name in the registry
+	SchemaGroup string `yaml:"schema_group"`
+	// SchemaName is the name of the schema to use
+	SchemaName string `yaml:"schema_name"`
+}
+
 // TopicMapping defines a source and destination topic pair for bridging
 type TopicMapping struct {
-	SourceTopic string `yaml:"source_topic"` // Topic to read from
-	DestTopic   string `yaml:"dest_topic"`   // Topic to write to
+	SourceTopic string      `yaml:"source_topic"` // Topic to read from
+	DestTopic   string      `yaml:"dest_topic"`   // Topic to write to
+	Avro        *AvroConfig `yaml:"avro"`         // Optional Avro config for serialization/deserialization
 }
 
 // BridgeConfig contains bridge-specific settings
@@ -76,16 +85,11 @@ type BridgeConfig struct {
 	KafkaToMQTT *TopicMapping `yaml:"kafka_to_mqtt"` // Kafka→MQTT topic mapping
 }
 
-// SchemaRegistryConfig contains Azure Event Hubs Schema Registry settings
+// SchemaRegistryConfig contains Azure Event Hubs Schema Registry connection settings
 type SchemaRegistryConfig struct {
-	Enabled bool `yaml:"enabled"` // Enable Schema Registry integration for Avro serialization
 	// FullyQualifiedNamespace is the fully qualified namespace of the Schema Registry
 	// e.g., "<namespace>.servicebus.windows.net"
 	FullyQualifiedNamespace string `yaml:"fully_qualified_namespace"`
-	// GroupName is the schema group name in the registry
-	GroupName string `yaml:"group_name"`
-	// SchemaName is the name of the schema to use for serialization/deserialization
-	SchemaName string `yaml:"schema_name"`
 	// CacheEnabled enables schema caching (default: true)
 	CacheEnabled *bool `yaml:"cache_enabled"`
 	// TenantID is the Azure tenant ID for authentication (optional)

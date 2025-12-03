@@ -83,29 +83,33 @@ bridge:
 
 ### Avro Schema Registry Configuration
 
-The bridge supports Avro serialization/deserialization using Azure Event Hubs Schema Registry. When enabled:
+The bridge supports optional Avro serialization/deserialization using Azure Event Hubs Schema Registry. Avro can be enabled independently for each bridging direction:
 
-- **MQTT → Kafka**: JSON messages from MQTT are serialized to Avro format before being sent to Kafka
-- **Kafka → MQTT**: Avro messages from Kafka are deserialized to JSON before being published to MQTT
+- **MQTT → Kafka**: Add `avro` config to `mqtt_to_kafka` to serialize JSON messages to Avro format before sending to Kafka
+- **Kafka → MQTT**: Add `avro` config to `kafka_to_mqtt` to deserialize Avro messages from Kafka to JSON before publishing to MQTT
 
 ```yaml
+bridge:
+  mqtt_to_kafka:
+    source_topic: "mqtt/events"
+    dest_topic: "mqtt-to-kafka"
+    # Optional: Enable Avro serialization
+    avro:
+      schema_group: "your-schema-group"
+      schema_name: "your-schema-name"
+  
+  kafka_to_mqtt:
+    source_topic: "events"
+    dest_topic: "kafka/events"
+    # Optional: Enable Avro deserialization
+    avro:
+      schema_group: "your-schema-group"
+      schema_name: "your-schema-name"
+
+# Required when avro is configured in any bridge direction
 schema_registry:
-  # Enable Schema Registry integration
-  enabled: true
-  
-  # Fully qualified namespace of the Schema Registry
-  # e.g., "<namespace>.servicebus.windows.net"
   fully_qualified_namespace: "your-namespace.servicebus.windows.net"
-  
-  # Schema group name in the registry
-  group_name: "your-schema-group"
-  
-  # Name of the schema to use for serialization (must already exist in the registry)
-  schema_name: "your-schema-name"
-  
-  # Enable schema caching (default: true)
-  cache_enabled: true
-  
+  cache_enabled: true  # optional, default: true
   # Azure AD authentication (optional - uses DefaultAzureCredential if not provided)
   # tenant_id: "your-tenant-id"
   # client_id: "your-client-id"

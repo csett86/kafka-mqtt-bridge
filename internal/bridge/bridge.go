@@ -126,11 +126,21 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 	}, nil
 }
 
-// initializeAvro initializes the Avro serializer and deserializer if schema registry is enabled
+// initializeAvro initializes the Avro serializer and deserializer based on bridge config
 func (b *Bridge) initializeAvro(ctx context.Context) error {
 	cfg := b.config.SchemaRegistry
-	if !cfg.Enabled {
-		return nil
+	
+	// Check if any Avro config is specified
+	mqttToKafkaAvro := b.config.Bridge.MQTTToKafka != nil && b.config.Bridge.MQTTToKafka.Avro != nil
+	kafkaToMQTTAvro := b.config.Bridge.KafkaToMQTT != nil && b.config.Bridge.KafkaToMQTT.Avro != nil
+	
+	if !mqttToKafkaAvro && !kafkaToMQTTAvro {
+		return nil // No Avro config, skip initialization
+	}
+
+	// Schema registry namespace is required when Avro is configured
+	if cfg.FullyQualifiedNamespace == "" {
+		return fmt.Errorf("schema_registry.fully_qualified_namespace is required when avro is configured")
 	}
 
 	// Create Azure credential if explicitly configured, otherwise use default
@@ -149,43 +159,62 @@ func (b *Bridge) initializeAvro(ctx context.Context) error {
 		cacheEnabled = *cfg.CacheEnabled
 	}
 
-	// Create schema registry client
-	srClient, err := schemaregistry.NewClient(schemaregistry.ClientConfig{
-		FullyQualifiedNamespace: cfg.FullyQualifiedNamespace,
-		GroupName:               cfg.GroupName,
-		Credential:              cred,
-		CacheEnabled:            cacheEnabled,
-	}, b.logger)
-	if err != nil {
-		return fmt.Errorf("failed to create schema registry client: %w", err)
-	}
+	// Create serializer for MQTT→Kafka if Avro is configured
+	if mqttToKafkaAvro {
+		avroCfg := b.config.Bridge.MQTTToKafka.Avro
+		srClient, err := schemaregistry.NewClient(schemaregistry.ClientConfig{
+			FullyQualifiedNamespace: cfg.FullyQualifiedNamespace,
+			GroupName:               avroCfg.SchemaGroup,
+			Credential:              cred,
+			CacheEnabled:            cacheEnabled,
+		}, b.logger)
+		if err != nil {
+			return fmt.Errorf("failed to create schema registry client for serialization: %w", err)
+		}
 
-	// Create serializer if schema name is configured
-	if cfg.SchemaName != "" {
 		serializer, err := avro.NewSerializer(ctx, avro.SerializerConfig{
 			SchemaRegistryClient: srClient,
-			SchemaName:           cfg.SchemaName,
+			SchemaName:           avroCfg.SchemaName,
 		}, b.logger)
 		if err != nil {
 			return fmt.Errorf("failed to create Avro serializer: %w", err)
 		}
 		b.avroSerializer = serializer
+
+		b.logger.Info("Avro serialization enabled for MQTT→Kafka",
+			zap.String("namespace", cfg.FullyQualifiedNamespace),
+			zap.String("schemaGroup", avroCfg.SchemaGroup),
+			zap.String("schemaName", avroCfg.SchemaName),
+		)
 	}
 
-	// Create deserializer (always needed for decoding messages)
-	deserializer, err := avro.NewDeserializer(avro.DeserializerConfig{
-		SchemaRegistryClient: srClient,
-	}, b.logger)
-	if err != nil {
-		return fmt.Errorf("failed to create Avro deserializer: %w", err)
-	}
-	b.avroDeserializer = deserializer
+	// Create deserializer for Kafka→MQTT if Avro is configured
+	if kafkaToMQTTAvro {
+		avroCfg := b.config.Bridge.KafkaToMQTT.Avro
+		srClient, err := schemaregistry.NewClient(schemaregistry.ClientConfig{
+			FullyQualifiedNamespace: cfg.FullyQualifiedNamespace,
+			GroupName:               avroCfg.SchemaGroup,
+			Credential:              cred,
+			CacheEnabled:            cacheEnabled,
+		}, b.logger)
+		if err != nil {
+			return fmt.Errorf("failed to create schema registry client for deserialization: %w", err)
+		}
 
-	b.logger.Info("Avro support initialized",
-		zap.String("namespace", cfg.FullyQualifiedNamespace),
-		zap.String("groupName", cfg.GroupName),
-		zap.String("schemaName", cfg.SchemaName),
-	)
+		deserializer, err := avro.NewDeserializer(avro.DeserializerConfig{
+			SchemaRegistryClient: srClient,
+		}, b.logger)
+		if err != nil {
+			return fmt.Errorf("failed to create Avro deserializer: %w", err)
+		}
+		b.avroDeserializer = deserializer
+
+		b.logger.Info("Avro deserialization enabled for Kafka→MQTT",
+			zap.String("namespace", cfg.FullyQualifiedNamespace),
+			zap.String("schemaGroup", avroCfg.SchemaGroup),
+			zap.String("schemaName", avroCfg.SchemaName),
+		)
+	}
 
 	return nil
 }
@@ -195,7 +224,6 @@ func (b *Bridge) Start(ctx context.Context) error {
 	b.logger.Info("Starting bridge",
 		zap.String("name", b.config.Bridge.Name),
 		zap.Int("mqttQoS", b.config.MQTT.QoS),
-		zap.Bool("avroEnabled", b.config.SchemaRegistry.Enabled),
 	)
 
 	// Initialize Avro support if enabled
