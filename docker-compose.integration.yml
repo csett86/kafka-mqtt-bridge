@@ -30,12 +30,6 @@ services:
       ACCEPT_EULA: "Y"
     volumes:
       - ./test/eventhubs-emulator-config.json:/Eventhubs_Emulator/ConfigFiles/Config.json:ro
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5300/health || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-      start_period: 90s
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
