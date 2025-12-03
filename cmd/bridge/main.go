@@ -30,7 +30,6 @@ func main() {
 	}
 
 	logger.Info("Starting Kafka-MQTT Bridge",
-		zap.String("version", "1.0.0"),
 		zap.String("config", *configPath),
 	)
 

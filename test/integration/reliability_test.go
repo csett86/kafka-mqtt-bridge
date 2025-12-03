@@ -243,6 +243,24 @@ bridge:
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
+	// Setup Kafka writer and publish first message BEFORE starting bridge
+	// This ensures the message exists when the bridge starts reading
+	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
+	defer kafkaWriter.Close()
+
+	// Phase 1: Publish first message to Kafka before starting the bridge
+	t.Log("Phase 1: Publishing initial message to Kafka...")
+	testMessage1 := "before-kafka-restart-message-" + testIDStr
+
+	err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+		Key:   []byte("test-key"),
+		Value: []byte(testMessage1),
+	}, 10)
+	if err != nil {
+		t.Fatalf("Failed to write first message to Kafka: %v", err)
+	}
+	t.Logf("Published message to Kafka topic %s: %s", kafkaTopic, testMessage1)
+
 	// Start the bridge binary
 	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
 	bridgeCmd.Dir = tmpDir
@@ -263,28 +281,12 @@ bridge:
 
 	t.Log("Bridge binary started, waiting for it to initialize...")
 
-	// Give bridge time to start
-	time.Sleep(3 * time.Second)
+	// Give bridge time to start, connect to Kafka, and process the message.
+	// 5 seconds is sufficient for the bridge to read the pre-queued message.
+	time.Sleep(5 * time.Second)
 
-	// Setup Kafka writer to publish messages
-	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
-	defer kafkaWriter.Close()
-
-	// Phase 1: Verify initial message flow works
-	t.Log("Phase 1: Verifying initial message flow...")
-	testMessage1 := "before-kafka-restart-message-" + testIDStr
-
-	err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
-		Key:   []byte("test-key"),
-		Value: []byte(testMessage1),
-	}, 10)
-	if err != nil {
-		t.Fatalf("Failed to write first message to Kafka: %v", err)
-	}
-
-	t.Logf("Published message to Kafka topic %s: %s", kafkaTopic, testMessage1)
-
-	// Wait for the message to appear on MQTT
+	// Verify initial message flow works
+	t.Log("Verifying initial message flow...")
 	select {
 	case received := <-receivedMessages:
 		if received != testMessage1 {

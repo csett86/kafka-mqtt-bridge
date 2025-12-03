@@ -303,6 +303,27 @@ bridge:
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
+	// Setup Kafka writer and publish messages BEFORE starting bridge
+	// This ensures the messages exist when the bridge starts reading
+	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
+	defer kafkaWriter.Close()
+
+	// Publish messages to Kafka - the bridge should forward them to MQTT when it starts
+	for i, msg := range testMessages {
+		retries := 10
+		if i > 0 {
+			retries = 3
+		}
+		err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+			Key:   []byte(fmt.Sprintf("key-%d", i)),
+			Value: []byte(msg),
+		}, retries)
+		if err != nil {
+			t.Fatalf("Failed to write message %d to Kafka: %v", i, err)
+		}
+		t.Logf("Published message to Kafka: %s", msg)
+	}
+
 	// Start the bridge binary
 	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
 	bridgeCmd.Dir = tmpDir
@@ -323,28 +344,9 @@ bridge:
 
 	t.Log("Bridge binary started, waiting for it to initialize...")
 
-	// Give bridge time to start
-	time.Sleep(3 * time.Second)
-
-	// Setup Kafka writer to publish messages
-	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
-	defer kafkaWriter.Close()
-
-	// Publish messages to Kafka - the bridge should forward them to MQTT
-	for i, msg := range testMessages {
-		retries := 10
-		if i > 0 {
-			retries = 3
-		}
-		err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
-			Key:   []byte(fmt.Sprintf("key-%d", i)),
-			Value: []byte(msg),
-		}, retries)
-		if err != nil {
-			t.Fatalf("Failed to write message %d to Kafka: %v", i, err)
-		}
-		t.Logf("Published message to Kafka: %s", msg)
-	}
+	// Give bridge time to start, connect to Kafka, and process the messages.
+	// 5 seconds is sufficient for the bridge to read the pre-queued messages.
+	time.Sleep(5 * time.Second)
 
 	// Collect messages received on MQTT
 	received := make([]string, 0, len(testMessages))
