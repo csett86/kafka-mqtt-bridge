@@ -5,11 +5,12 @@ package avro
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"sync"
 
 	"github.com/csett86/kafka-mqtt-bridge/internal/schemaregistry"
-	"github.com/linkedin/goavro/v2"
+	"github.com/hamba/avro/v2"
 	"go.uber.org/zap"
 )
 
@@ -24,7 +25,7 @@ type Serializer struct {
 	client     *schemaregistry.Client
 	schemaName string
 	schema     *schemaregistry.Schema
-	codec      *goavro.Codec
+	avroSchema avro.Schema
 	logger     *zap.Logger
 	mu         sync.RWMutex
 }
@@ -65,11 +66,11 @@ func NewSerializer(ctx context.Context, cfg SerializerConfig, logger *zap.Logger
 func (s *Serializer) Serialize(ctx context.Context, data interface{}) ([]byte, error) {
 	s.mu.RLock()
 	schema := s.schema
-	codec := s.codec
+	avroSchema := s.avroSchema
 	s.mu.RUnlock()
 
 	// If no schema is set, fetch it
-	if schema == nil || codec == nil {
+	if schema == nil || avroSchema == nil {
 		s.mu.Lock()
 		if s.schema == nil {
 			var err error
@@ -78,19 +79,19 @@ func (s *Serializer) Serialize(ctx context.Context, data interface{}) ([]byte, e
 				s.mu.Unlock()
 				return nil, fmt.Errorf("failed to get schema: %w", err)
 			}
-			s.codec, err = goavro.NewCodec(s.schema.Content)
+			s.avroSchema, err = avro.Parse(s.schema.Content)
 			if err != nil {
 				s.mu.Unlock()
-				return nil, fmt.Errorf("failed to create Avro codec: %w", err)
+				return nil, fmt.Errorf("failed to parse Avro schema: %w", err)
 			}
 		}
 		schema = s.schema
-		codec = s.codec
+		avroSchema = s.avroSchema
 		s.mu.Unlock()
 	}
 
 	// Encode data to Avro binary
-	avroBytes, err := codec.BinaryFromNative(nil, data)
+	avroBytes, err := avro.Marshal(avroSchema, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode data to Avro: %w", err)
 	}
@@ -120,11 +121,11 @@ func (s *Serializer) Serialize(ctx context.Context, data interface{}) ([]byte, e
 func (s *Serializer) SerializeJSON(ctx context.Context, jsonData []byte) ([]byte, error) {
 	s.mu.RLock()
 	schema := s.schema
-	codec := s.codec
+	avroSchema := s.avroSchema
 	s.mu.RUnlock()
 
 	// If no schema is set, fetch it
-	if schema == nil || codec == nil {
+	if schema == nil || avroSchema == nil {
 		s.mu.Lock()
 		if s.schema == nil {
 			var err error
@@ -133,25 +134,25 @@ func (s *Serializer) SerializeJSON(ctx context.Context, jsonData []byte) ([]byte
 				s.mu.Unlock()
 				return nil, fmt.Errorf("failed to get schema: %w", err)
 			}
-			s.codec, err = goavro.NewCodec(s.schema.Content)
+			s.avroSchema, err = avro.Parse(s.schema.Content)
 			if err != nil {
 				s.mu.Unlock()
-				return nil, fmt.Errorf("failed to create Avro codec: %w", err)
+				return nil, fmt.Errorf("failed to parse Avro schema: %w", err)
 			}
 		}
 		schema = s.schema
-		codec = s.codec
+		avroSchema = s.avroSchema
 		s.mu.Unlock()
 	}
 
-	// Convert JSON to native Go types
-	native, _, err := codec.NativeFromTextual(jsonData)
-	if err != nil {
+	// Parse JSON to a generic map
+	var data interface{}
+	if err := json.Unmarshal(jsonData, &data); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
 	// Encode to Avro binary
-	avroBytes, err := codec.BinaryFromNative(nil, native)
+	avroBytes, err := avro.Marshal(avroSchema, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode to Avro: %w", err)
 	}
@@ -188,8 +189,8 @@ func (s *Serializer) GetSchemaID() string {
 // Deserializer provides Avro deserialization with Schema Registry integration
 type Deserializer struct {
 	client  *schemaregistry.Client
-	codecs  map[string]*goavro.Codec
-	schemas map[string]*schemaregistry.Schema
+	schemas map[string]avro.Schema
+	regSchemas map[string]*schemaregistry.Schema
 	logger  *zap.Logger
 	mu      sync.RWMutex
 }
@@ -207,10 +208,10 @@ func NewDeserializer(cfg DeserializerConfig, logger *zap.Logger) (*Deserializer,
 	}
 
 	d := &Deserializer{
-		client:  cfg.SchemaRegistryClient,
-		codecs:  make(map[string]*goavro.Codec),
-		schemas: make(map[string]*schemaregistry.Schema),
-		logger:  logger,
+		client:     cfg.SchemaRegistryClient,
+		schemas:    make(map[string]avro.Schema),
+		regSchemas: make(map[string]*schemaregistry.Schema),
+		logger:     logger,
 	}
 
 	logger.Info("Avro deserializer created")
@@ -249,16 +250,16 @@ func (d *Deserializer) Deserialize(ctx context.Context, data []byte) (*Deseriali
 	// Extract schema ID
 	schemaID := string(data[5 : 5+schemaIDLen])
 
-	// Get or create codec for this schema
-	codec, schema, err := d.getCodec(ctx, schemaID)
+	// Get or create schema for this schema ID
+	avroSchema, regSchema, err := d.getSchema(ctx, schemaID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get codec for schema %s: %w", schemaID, err)
+		return nil, fmt.Errorf("failed to get schema for schema %s: %w", schemaID, err)
 	}
 
 	// Decode Avro payload
 	avroPayload := data[5+schemaIDLen:]
-	native, _, err := codec.NativeFromBinary(avroPayload)
-	if err != nil {
+	var native interface{}
+	if err := avro.Unmarshal(avroSchema, avroPayload, &native); err != nil {
 		return nil, fmt.Errorf("failed to decode Avro payload: %w", err)
 	}
 
@@ -270,7 +271,7 @@ func (d *Deserializer) Deserialize(ctx context.Context, data []byte) (*Deseriali
 	return &DeserializeResult{
 		Data:     native,
 		SchemaID: schemaID,
-		Schema:   schema,
+		Schema:   regSchema,
 	}, nil
 }
 
@@ -294,20 +295,21 @@ func (d *Deserializer) DeserializeToJSON(ctx context.Context, data []byte) ([]by
 	// Extract schema ID
 	schemaID := string(data[5 : 5+schemaIDLen])
 
-	// Get or create codec for this schema
-	codec, _, err := d.getCodec(ctx, schemaID)
+	// Get or create schema for this schema ID
+	avroSchema, _, err := d.getSchema(ctx, schemaID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get codec for schema %s: %w", schemaID, err)
+		return nil, fmt.Errorf("failed to get schema for schema %s: %w", schemaID, err)
 	}
 
-	// Decode Avro payload to JSON
+	// Decode Avro payload to native Go types
 	avroPayload := data[5+schemaIDLen:]
-	native, _, err := codec.NativeFromBinary(avroPayload)
-	if err != nil {
+	var native interface{}
+	if err := avro.Unmarshal(avroSchema, avroPayload, &native); err != nil {
 		return nil, fmt.Errorf("failed to decode Avro payload: %w", err)
 	}
 
-	jsonBytes, err := codec.TextualFromNative(nil, native)
+	// Convert to JSON
+	jsonBytes, err := json.Marshal(native)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert to JSON: %w", err)
 	}
@@ -320,15 +322,15 @@ func (d *Deserializer) DeserializeToJSON(ctx context.Context, data []byte) ([]by
 	return jsonBytes, nil
 }
 
-// getCodec gets or creates a codec for the given schema ID
-func (d *Deserializer) getCodec(ctx context.Context, schemaID string) (*goavro.Codec, *schemaregistry.Schema, error) {
+// getSchema gets or creates a schema for the given schema ID
+func (d *Deserializer) getSchema(ctx context.Context, schemaID string) (avro.Schema, *schemaregistry.Schema, error) {
 	d.mu.RLock()
-	codec, ok := d.codecs[schemaID]
-	schema := d.schemas[schemaID]
+	avroSchema, ok := d.schemas[schemaID]
+	regSchema := d.regSchemas[schemaID]
 	d.mu.RUnlock()
 
 	if ok {
-		return codec, schema, nil
+		return avroSchema, regSchema, nil
 	}
 
 	// Fetch schema from registry
@@ -336,24 +338,24 @@ func (d *Deserializer) getCodec(ctx context.Context, schemaID string) (*goavro.C
 	defer d.mu.Unlock()
 
 	// Double-check after acquiring write lock
-	if codec, ok = d.codecs[schemaID]; ok {
-		return codec, d.schemas[schemaID], nil
+	if avroSchema, ok = d.schemas[schemaID]; ok {
+		return avroSchema, d.regSchemas[schemaID], nil
 	}
 
-	schema, err := d.client.GetSchemaByID(ctx, schemaID)
+	regSchema, err := d.client.GetSchemaByID(ctx, schemaID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	codec, err = goavro.NewCodec(schema.Content)
+	avroSchema, err = avro.Parse(regSchema.Content)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create codec: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse schema: %w", err)
 	}
 
-	d.codecs[schemaID] = codec
-	d.schemas[schemaID] = schema
+	d.schemas[schemaID] = avroSchema
+	d.regSchemas[schemaID] = regSchema
 
-	return codec, schema, nil
+	return avroSchema, regSchema, nil
 }
 
 // IsAvroMessage checks if the message is an Avro-encoded message with Schema Registry header
