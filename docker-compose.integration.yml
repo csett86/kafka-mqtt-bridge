@@ -1,18 +1,47 @@
 # Docker Compose file for integration testing
-# Provides Kafka and MQTT (Mosquitto) brokers for testing
+# Provides Kafka, MQTT (Mosquitto), and Azure Event Hubs Emulator for testing
 
 services:
+  # Azure Event Hubs Emulator dependencies
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); http.get('http://localhost:10000/', (r) => process.exit(r.statusCode === 400 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  eventhubs-emulator:
+    image: mcr.microsoft.com/azure-messaging/eventhubs-emulator:latest
+    depends_on:
+      azurite:
+        condition: service_healthy
+    ports:
+      - "5672:5672"   # AMQP
+      - "9092:9092"   # Kafka (must be 9092 as that's what the emulator advertises)
+    environment:
+      BLOB_SERVER: azurite
+      METADATA_SERVER: azurite
+      ACCEPT_EULA: "Y"
+    volumes:
+      - ./test/eventhubs-emulator-config.json:/Eventhubs_Emulator/ConfigFiles/Config.json:ro
+
   kafka:
     image: apache/kafka:4.1.1
     hostname: kafka
     ports:
-      - "9092:9092"
+      - "9094:9094"
     environment:
       # KRaft combined mode configuration
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://:9094,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9094
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
@@ -25,7 +54,7 @@ services:
       KAFKA_MESSAGE_MAX_BYTES: 2097152
       KAFKA_REPLICA_FETCH_MAX_BYTES: 2097152
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9094 || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 10

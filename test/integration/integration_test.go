@@ -31,7 +31,7 @@ import (
 
 // Test configuration - can be overridden via environment variables
 var (
-	kafkaBrokers = getEnv("TEST_KAFKA_BROKERS", "localhost:9092")
+	kafkaBrokers = getEnv("TEST_KAFKA_BROKERS", "localhost:9094")
 	mqttBroker   = getEnv("TEST_MQTT_BROKER", "localhost")
 	mqttPort     = getEnvInt("TEST_MQTT_PORT", 1883)
 	testTimeout  = 30 * time.Second
