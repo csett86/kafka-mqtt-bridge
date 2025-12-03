@@ -68,9 +68,33 @@ bridge:
   mqtt_to_kafka:
     source_topic: "mqtt/events"
     dest_topic: "mqtt-to-kafka"
+    # Optional: Enable Avro serialization when writing to Kafka
+    # avro:
+    #   schema_group: "your-schema-group"
+    #   schema_name: "your-schema-name"
   
   # Kafka to MQTT bridging configuration
   # Messages from Kafka source_topic will be forwarded to MQTT dest_topic
   kafka_to_mqtt:
     source_topic: "events"
     dest_topic: "kafka/events"
+    # Optional: Enable Avro deserialization when reading from Kafka
+    # avro:
+    #   schema_group: "your-schema-group"
+    #   schema_name: "your-schema-name"
+
+# Azure Event Hubs Schema Registry Configuration (required when using avro)
+# This section provides connection settings for the Azure Schema Registry
+# schema_registry:
+#   # Fully qualified namespace of the Schema Registry
+#   # e.g., "<namespace>.servicebus.windows.net"
+#   fully_qualified_namespace: "your-namespace.servicebus.windows.net"
+#   
+#   # Enable schema caching (default: true)
+#   # cache_enabled: true
+#   
+#   # Azure AD authentication (optional)
+#   # If not provided, DefaultAzureCredential will be used
+#   # tenant_id: "your-tenant-id"
+#   # client_id: "your-client-id"
+#   # client_secret: "your-client-secret"
