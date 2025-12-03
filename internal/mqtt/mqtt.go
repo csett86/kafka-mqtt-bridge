@@ -109,33 +109,27 @@ func NewClientWithConfig(cfg ClientConfig, logger *zap.Logger) (*Client, error) 
 		)
 	}
 
-	// Enable automatic reconnection with exponential backoff
 	opts.SetAutoReconnect(true)
-	// CleanSession should be false for QoS > 0 to maintain session state for exactly-once semantics
 	opts.SetCleanSession(cfg.CleanSession)
 	opts.SetConnectRetry(true)
 	opts.SetConnectRetryInterval(1 * time.Second)
 	opts.SetMaxReconnectInterval(60 * time.Second)
 
-	// Set connection lost handler
 	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
 		logger.Warn("MQTT connection lost, will attempt to reconnect",
 			zap.Error(err),
 		)
 	})
 
-	// Set reconnect handler to restore subscriptions
 	opts.SetReconnectingHandler(func(client mqtt.Client, opts *mqtt.ClientOptions) {
 		logger.Info("MQTT attempting to reconnect...")
 	})
 
-	// Set OnConnect handler to restore subscriptions after reconnection
 	opts.SetOnConnectHandler(func(client mqtt.Client) {
 		logger.Info("MQTT connected/reconnected",
 			zap.String("broker", cfg.Broker),
 			zap.Int("port", cfg.Port),
 		)
-		// Restore subscriptions after reconnection
 		c.restoreSubscriptions()
 	})
 
@@ -230,7 +224,6 @@ func (c *Client) Subscribe(topic string, callback mqtt.MessageHandler) error {
 		return fmt.Errorf("failed to subscribe to topic: %w", token.Error())
 	}
 
-	// Store subscription for recovery after reconnection
 	c.subMu.Lock()
 	c.subscriptions = append(c.subscriptions, subscription{
 		topic:   topic,
