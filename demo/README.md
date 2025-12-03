@@ -27,8 +27,7 @@ MQTT Subscriber (master_data) <- Mosquitto <- Kafka-MQTT Bridge <- Kafka Broker 
 | Service | Description |
 |---------|-------------|
 | `mosquitto` | Eclipse Mosquitto MQTT broker |
-| `zookeeper` | Apache ZooKeeper for Kafka coordination |
-| `kafka` | Apache Kafka message broker |
+| `kafka` | Apache Kafka message broker (KRaft mode) |
 | `bridge` | Kafka-MQTT Bridge service (built from source) |
 | `mqtt-publisher` | Publishes to MQTT "transactions" every 5 seconds |
 | `kafka-subscriber` | Listens to Kafka "transactions" topic |
