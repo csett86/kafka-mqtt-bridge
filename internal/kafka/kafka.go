@@ -114,9 +114,9 @@ func NewClientWithConfig(cfg ClientConfig, logger *zap.Logger) (*Client, error) 
 			MaxAttempts:       0, // Unlimited retries for connection failures
 			ReadBackoffMin:    100 * time.Millisecond,
 			ReadBackoffMax:    1 * time.Second,
-			HeartbeatInterval: 3 * time.Second,
-			SessionTimeout:    30 * time.Second,
-			RebalanceTimeout:  30 * time.Second,
+			HeartbeatInterval: 1 * time.Second,
+			SessionTimeout:    6 * time.Second,
+			RebalanceTimeout:  6 * time.Second,
 		}
 		if dialer != nil {
 			readerConfig.Dialer = dialer

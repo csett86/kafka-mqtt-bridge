@@ -117,6 +117,47 @@ func TestPerformance1000Messages(t *testing.T) {
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
+	// Setup Kafka writer and publish messages BEFORE starting bridge
+	// This ensures the messages exist when the bridge starts reading
+	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
+	defer kafkaWriter.Close()
+
+	// Generate test message
+	testMessage := strings.Repeat("x", messageSize)
+
+	// Publish messages to Kafka
+	t.Logf("Publishing %d messages of %d bytes each...", messageCount, messageSize)
+	startTime := time.Now()
+
+	for i := 0; i < messageCount; i++ {
+		retries := 3
+		if i == 0 {
+			retries = 10 // More retries for first message (topic creation)
+		}
+		err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+			Key:   []byte(fmt.Sprintf("key-%d", i)),
+			Value: []byte(fmt.Sprintf("%s-%d", testMessage, i)),
+		}, retries)
+		if err != nil {
+			t.Fatalf("Failed to write message %d to Kafka: %v", i, err)
+		}
+
+		// Log progress every 100 messages
+		if (i+1)%100 == 0 {
+			t.Logf("Published %d/%d messages", i+1, messageCount)
+		}
+	}
+
+	publishDuration := time.Since(startTime)
+	t.Logf("Published all %d messages in %v (%.2f msg/sec)",
+		messageCount, publishDuration, float64(messageCount)/publishDuration.Seconds())
+
+	// Get memory stats after publishing
+	afterPublishStats := getMemoryStats()
+	t.Logf("After publishing - Alloc: %s, HeapAlloc: %s",
+		formatBytes(afterPublishStats.Alloc),
+		formatBytes(afterPublishStats.HeapAlloc))
+
 	// Create a logger for the bridge (suppress debug logs for performance)
 	logConfig := zap.NewProductionConfig()
 	logConfig.Level = zap.NewAtomicLevelAt(zap.WarnLevel)
@@ -142,57 +183,14 @@ func TestPerformance1000Messages(t *testing.T) {
 		}
 	}()
 
-	// Give bridge time to start
-	time.Sleep(1 * time.Second)
+	// Give bridge time to start and join consumer group
+	time.Sleep(2 * time.Second)
 
 	// Get memory stats after bridge startup
 	afterStartupStats := getMemoryStats()
 	t.Logf("After bridge startup - Alloc: %s, HeapAlloc: %s",
 		formatBytes(afterStartupStats.Alloc),
 		formatBytes(afterStartupStats.HeapAlloc))
-
-	// Setup Kafka writer
-	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
-	defer kafkaWriter.Close()
-
-	// Generate test message
-	testMessage := strings.Repeat("x", messageSize)
-
-	// Publish messages to Kafka
-	t.Logf("Publishing %d messages of %d bytes each...", messageCount, messageSize)
-	startTime := time.Now()
-
-	for i := 0; i < messageCount; i++ {
-		retries := 3
-		if i == 0 {
-			retries = 10 // More retries for first message (topic creation)
-		}
-		err = writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
-			Key:   []byte(fmt.Sprintf("key-%d", i)),
-			Value: []byte(fmt.Sprintf("%s-%d", testMessage, i)),
-		}, retries)
-		if err != nil {
-			bridgeCancel()
-			<-bridgeDone
-			b.Stop()
-			t.Fatalf("Failed to write message %d to Kafka: %v", i, err)
-		}
-
-		// Log progress every 100 messages
-		if (i+1)%100 == 0 {
-			t.Logf("Published %d/%d messages", i+1, messageCount)
-		}
-	}
-
-	publishDuration := time.Since(startTime)
-	t.Logf("Published all %d messages in %v (%.2f msg/sec)",
-		messageCount, publishDuration, float64(messageCount)/publishDuration.Seconds())
-
-	// Get memory stats after publishing
-	afterPublishStats := getMemoryStats()
-	t.Logf("After publishing - Alloc: %s, HeapAlloc: %s",
-		formatBytes(afterPublishStats.Alloc),
-		formatBytes(afterPublishStats.HeapAlloc))
 
 	// Wait for all messages to be received
 	select {
@@ -298,6 +296,62 @@ func TestPerformance10LargeMessages(t *testing.T) {
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
+	// Setup Kafka writer with larger batch size for large messages and publish BEFORE starting bridge
+	kafkaWriter := &kafka.Writer{
+		Addr:                   kafka.TCP(kafkaBrokers),
+		Topic:                  kafkaTopic,
+		Balancer:               &kafka.LeastBytes{},
+		AllowAutoTopicCreation: true,
+		BatchTimeout:           100 * time.Millisecond,
+		WriteTimeout:           30 * time.Second,
+		RequiredAcks:           kafka.RequireOne,
+		MaxAttempts:            10,
+		BatchBytes:             2 * 1024 * 1024, // 2MB to accommodate 1MB messages
+	}
+	defer kafkaWriter.Close()
+
+	// Generate large test message (1MB of data)
+	largePayload := strings.Repeat("A", messageSize)
+
+	// Track memory during message processing
+	memorySnapshots := make([]MemoryStats, 0, messageCount+2)
+
+	// Publish large messages to Kafka BEFORE starting bridge
+	t.Logf("Publishing %d messages of %s each...", messageCount, formatBytes(uint64(messageSize)))
+	startTime := time.Now()
+
+	for i := 0; i < messageCount; i++ {
+		// Create unique message with identifier
+		msgPayload := fmt.Sprintf("%s-MSG%d", largePayload[:messageSize-10], i)
+
+		retries := 5
+		if i == 0 {
+			retries = 15 // More retries for first message (topic creation)
+		}
+		err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+			Key:   []byte(fmt.Sprintf("large-key-%d", i)),
+			Value: []byte(msgPayload),
+		}, retries)
+		if err != nil {
+			t.Fatalf("Failed to write large message %d to Kafka: %v", i, err)
+		}
+
+		t.Logf("Published large message %d/%d", i+1, messageCount)
+
+		// Take memory snapshot after each message
+		snapshot := getMemoryStats()
+		memorySnapshots = append(memorySnapshots, snapshot)
+	}
+
+	publishDuration := time.Since(startTime)
+	t.Logf("Published all %d large messages in %v", messageCount, publishDuration)
+
+	// Get memory stats after publishing
+	afterPublishStats := getMemoryStats()
+	t.Logf("After publishing - Alloc: %s, HeapAlloc: %s",
+		formatBytes(afterPublishStats.Alloc),
+		formatBytes(afterPublishStats.HeapAlloc))
+
 	// Create a logger for the bridge
 	logConfig := zap.NewProductionConfig()
 	logConfig.Level = zap.NewAtomicLevelAt(zap.WarnLevel)
@@ -323,74 +377,15 @@ func TestPerformance10LargeMessages(t *testing.T) {
 		}
 	}()
 
-	// Give bridge time to start
-	time.Sleep(1 * time.Second)
+	// Give bridge time to start and join consumer group
+	time.Sleep(2 * time.Second)
 
 	// Get memory stats after bridge startup
 	afterStartupStats := getMemoryStats()
+	memorySnapshots = append(memorySnapshots, afterStartupStats)
 	t.Logf("After bridge startup - Alloc: %s, HeapAlloc: %s",
 		formatBytes(afterStartupStats.Alloc),
 		formatBytes(afterStartupStats.HeapAlloc))
-
-	// Setup Kafka writer with larger batch size for large messages
-	kafkaWriter := &kafka.Writer{
-		Addr:                   kafka.TCP(kafkaBrokers),
-		Topic:                  kafkaTopic,
-		Balancer:               &kafka.LeastBytes{},
-		AllowAutoTopicCreation: true,
-		BatchTimeout:           100 * time.Millisecond,
-		WriteTimeout:           30 * time.Second,
-		RequiredAcks:           kafka.RequireOne,
-		MaxAttempts:            10,
-		BatchBytes:             2 * 1024 * 1024, // 2MB to accommodate 1MB messages
-	}
-	defer kafkaWriter.Close()
-
-	// Generate large test message (1MB of data)
-	largePayload := strings.Repeat("A", messageSize)
-
-	// Track memory during message processing
-	memorySnapshots := make([]MemoryStats, 0, messageCount+2)
-	memorySnapshots = append(memorySnapshots, afterStartupStats)
-
-	// Publish large messages to Kafka
-	t.Logf("Publishing %d messages of %s each...", messageCount, formatBytes(uint64(messageSize)))
-	startTime := time.Now()
-
-	for i := 0; i < messageCount; i++ {
-		// Create unique message with identifier
-		msgPayload := fmt.Sprintf("%s-MSG%d", largePayload[:messageSize-10], i)
-
-		retries := 5
-		if i == 0 {
-			retries = 15 // More retries for first message (topic creation)
-		}
-		err = writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
-			Key:   []byte(fmt.Sprintf("large-key-%d", i)),
-			Value: []byte(msgPayload),
-		}, retries)
-		if err != nil {
-			bridgeCancel()
-			<-bridgeDone
-			b.Stop()
-			t.Fatalf("Failed to write large message %d to Kafka: %v", i, err)
-		}
-
-		t.Logf("Published large message %d/%d", i+1, messageCount)
-
-		// Take memory snapshot after each message
-		snapshot := getMemoryStats()
-		memorySnapshots = append(memorySnapshots, snapshot)
-	}
-
-	publishDuration := time.Since(startTime)
-	t.Logf("Published all %d large messages in %v", messageCount, publishDuration)
-
-	// Get memory stats after publishing
-	afterPublishStats := getMemoryStats()
-	t.Logf("After publishing - Alloc: %s, HeapAlloc: %s",
-		formatBytes(afterPublishStats.Alloc),
-		formatBytes(afterPublishStats.HeapAlloc))
 
 	// Wait for all messages to be received
 	select {
