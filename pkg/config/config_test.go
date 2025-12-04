@@ -241,8 +241,10 @@ bridge:
 
 // clearEnvVars clears all BRIDGE_ prefixed environment variables
 func clearEnvVars() {
+	const bridgePrefix = "BRIDGE_"
+	prefixLen := len(bridgePrefix)
 	for _, env := range os.Environ() {
-		if len(env) > 7 && env[:7] == "BRIDGE_" {
+		if len(env) > prefixLen && env[:prefixLen] == bridgePrefix {
 			var key string
 			for i := range env {
 				if env[i] == '=' {

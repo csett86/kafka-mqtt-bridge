@@ -115,14 +115,17 @@ func (a *AvroConfig) isEmpty() bool {
 
 // isEmpty returns true if the TopicMapping has no values set
 func (t *TopicMapping) isEmpty() bool {
-	return t == nil || (t.SourceTopic == "" && t.DestTopic == "" && t.Avro.isEmpty())
+	if t == nil {
+		return true
+	}
+	return t.SourceTopic == "" && t.DestTopic == "" && t.Avro.isEmpty()
 }
 
 // cleanupEmptyPointers sets pointer fields to nil if they contain only zero values.
 // This is needed because envconfig initializes all pointer struct fields, even when
 // no environment variables are set for them.
 func cleanupEmptyPointers(cfg *Config) {
-	// Clean up Avro configs
+	// Clean up Avro configs within topic mappings
 	if cfg.Bridge.MQTTToKafka != nil && cfg.Bridge.MQTTToKafka.Avro.isEmpty() {
 		cfg.Bridge.MQTTToKafka.Avro = nil
 	}
@@ -130,11 +133,11 @@ func cleanupEmptyPointers(cfg *Config) {
 		cfg.Bridge.KafkaToMQTT.Avro = nil
 	}
 
-	// Clean up TopicMapping configs
-	if cfg.Bridge.MQTTToKafka.isEmpty() {
+	// Clean up TopicMapping configs (check after Avro cleanup)
+	if cfg.Bridge.MQTTToKafka != nil && cfg.Bridge.MQTTToKafka.isEmpty() {
 		cfg.Bridge.MQTTToKafka = nil
 	}
-	if cfg.Bridge.KafkaToMQTT.isEmpty() {
+	if cfg.Bridge.KafkaToMQTT != nil && cfg.Bridge.KafkaToMQTT.isEmpty() {
 		cfg.Bridge.KafkaToMQTT = nil
 	}
 }
