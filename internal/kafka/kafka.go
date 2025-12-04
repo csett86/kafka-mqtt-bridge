@@ -166,7 +166,6 @@ func createDialer(saslCfg *SASLConfig, tlsCfg *TLSConfig, logger *zap.Logger) (*
 		DualStack: true,
 	}
 
-	// Configure TLS
 	if tlsCfg != nil && tlsCfg.Enabled {
 		tlsConfig, err := createTLSConfig(tlsCfg)
 		if err != nil {
@@ -179,7 +178,6 @@ func createDialer(saslCfg *SASLConfig, tlsCfg *TLSConfig, logger *zap.Logger) (*
 		)
 	}
 
-	// Configure SASL
 	if saslCfg != nil && saslCfg.Enabled {
 		mechanism, err := createSASLMechanism(saslCfg)
 		if err != nil {
@@ -271,7 +269,6 @@ func isTransientError(err error) bool {
 		return true
 	}
 
-	// Check for connection refused errors
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
 		return true
@@ -293,12 +290,10 @@ func (c *Client) FetchMessage(ctx context.Context) (*kafka.Message, error) {
 			return &msg, nil
 		}
 
-		// Check if context was cancelled
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("failed to fetch message: %w", ctx.Err())
 		}
 
-		// Check if it's a transient error that should be retried
 		if isTransientError(err) {
 			c.logger.Warn("Kafka fetch failed, will retry",
 				zap.Error(err),
@@ -311,7 +306,6 @@ func (c *Client) FetchMessage(ctx context.Context) (*kafka.Message, error) {
 			case <-time.After(backoff):
 			}
 
-			// Exponential backoff with cap
 			backoff = backoff * 2
 			if backoff > maxRetryBackoff {
 				backoff = maxRetryBackoff
@@ -382,12 +376,10 @@ func (c *Client) ReadMessage(ctx context.Context) (*kafka.Message, error) {
 			return &msg, nil
 		}
 
-		// Check if context was cancelled
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("failed to read message: %w", ctx.Err())
 		}
 
-		// Check if it's a transient error that should be retried
 		if isTransientError(err) {
 			c.logger.Warn("Kafka read failed, will retry",
 				zap.Error(err),
@@ -400,7 +392,6 @@ func (c *Client) ReadMessage(ctx context.Context) (*kafka.Message, error) {
 			case <-time.After(backoff):
 			}
 
-			// Exponential backoff with cap
 			backoff = backoff * 2
 			if backoff > maxRetryBackoff {
 				backoff = maxRetryBackoff
@@ -442,7 +433,6 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 			return fmt.Errorf("failed to write message: %w", ctx.Err())
 		}
 
-		// Log retry attempt
 		c.logger.Warn("Kafka write failed, retrying",
 			zap.Int("attempt", i+1),
 			zap.Int("maxRetries", maxWriteRetries),
@@ -455,7 +445,6 @@ func (c *Client) WriteMessageToTopic(ctx context.Context, topic string, key []by
 		case <-time.After(backoff):
 		}
 
-		// Exponential backoff with cap
 		backoff = backoff * 2
 		if backoff > maxRetryBackoff {
 			backoff = maxRetryBackoff

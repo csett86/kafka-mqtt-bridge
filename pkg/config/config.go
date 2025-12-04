@@ -115,7 +115,6 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Set defaults
 	if cfg.Kafka.GroupID == "" {
 		cfg.Kafka.GroupID = "kafka-mqtt-bridge"
 	}
@@ -125,11 +124,9 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.MQTT.ClientID == "" {
 		cfg.MQTT.ClientID = "kafka-mqtt-bridge"
 	}
-	// Validate and set default QoS (default: 1 for at-least-once delivery)
 	if cfg.MQTT.QoS < 0 || cfg.MQTT.QoS > 2 {
 		cfg.MQTT.QoS = 1
 	}
-	// Set CleanSession default: false when QoS > 0 to support session persistence
 	if cfg.MQTT.CleanSession == nil {
 		cleanSession := cfg.MQTT.QoS == 0
 		cfg.MQTT.CleanSession = &cleanSession
