@@ -6,6 +6,7 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers bid
 
 - Bidirectional message bridging between Kafka and MQTT
 - Configurable Kafka and MQTT connection settings in a single config file
+- **Avro serialization/deserialization with Azure Event Hubs Schema Registry**
 - Static binary releases for linux and windows without any dependencies
 - Implemented in Go with very low memory footprint (<10MB)
 - Graceful shutdown handling
@@ -79,6 +80,43 @@ bridge:
     source_topic: "events"
     dest_topic: "kafka/events"
 ```
+
+### Avro Schema Registry Configuration
+
+The bridge supports optional Avro serialization/deserialization using Azure Event Hubs Schema Registry. Avro can be enabled independently for each bridging direction:
+
+- **MQTT → Kafka**: Add `avro` config to `mqtt_to_kafka` to serialize JSON messages to Avro format before sending to Kafka
+- **Kafka → MQTT**: Add `avro` config to `kafka_to_mqtt` to deserialize Avro messages from Kafka to JSON before publishing to MQTT
+
+```yaml
+bridge:
+  mqtt_to_kafka:
+    source_topic: "mqtt/events"
+    dest_topic: "mqtt-to-kafka"
+    # Optional: Enable Avro serialization
+    avro:
+      schema_group: "your-schema-group"
+      schema_name: "your-schema-name"
+  
+  kafka_to_mqtt:
+    source_topic: "events"
+    dest_topic: "kafka/events"
+    # Optional: Enable Avro deserialization
+    avro:
+      schema_group: "your-schema-group"
+      schema_name: "your-schema-name"
+
+# Required when avro is configured in any bridge direction
+schema_registry:
+  fully_qualified_namespace: "your-namespace.servicebus.windows.net"
+  cache_enabled: true  # optional, default: true
+  # Azure AD authentication (optional - uses DefaultAzureCredential if not provided)
+  # tenant_id: "your-tenant-id"
+  # client_id: "your-client-id"
+  # client_secret: "your-client-secret"
+```
+
+**Authentication**: The Schema Registry client uses Azure Identity for authentication. If `tenant_id`, `client_id`, and `client_secret` are provided, it uses Client Secret credentials. Otherwise, it falls back to `DefaultAzureCredential`, which supports managed identities, environment variables, Azure CLI, and other Azure authentication methods.
 
 ## Usage
 
@@ -171,12 +209,16 @@ kafka-mqtt-bridge/
 │   └── bridge/
 │       └── main.go                       # Application entry point
 ├── internal/
+│   ├── avro/
+│   │   └── avro.go                       # Avro serialization/deserialization
 │   ├── bridge/
 │   │   └── bridge.go                     # Core bridge logic
 │   ├── kafka/
 │   │   └── kafka.go                      # Kafka client
-│   └── mqtt/
-│       └── mqtt.go                       # MQTT client
+│   ├── mqtt/
+│   │   └── mqtt.go                       # MQTT client
+│   └── schemaregistry/
+│       └── client.go                     # Azure Schema Registry client
 ├── pkg/
 │   └── config/
 │       └── config.go                     # Configuration management
@@ -199,6 +241,9 @@ kafka-mqtt-bridge/
 
 - `github.com/segmentio/kafka-go` - Kafka client library
 - `github.com/eclipse/paho.mqtt.golang` - MQTT client library
+- `github.com/linkedin/goavro/v2` - Avro serialization/deserialization
+- `github.com/Azure/azure-sdk-for-go/sdk/azidentity` - Azure authentication
+- `github.com/Azure/azure-sdk-for-go/sdk/azcore` - Azure core SDK
 - `go.uber.org/zap` - Structured logging
 - `gopkg.in/yaml.v3` - YAML configuration parsing
 

@@ -12,6 +12,17 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// maxPublishRetries is the maximum number of retries for publish failures
+	maxPublishRetries = 5
+	// publishRetryBackoff is the initial delay between publish retries
+	publishRetryBackoff = 500 * time.Millisecond
+	// maxPublishRetryBackoff is the maximum delay between publish retries
+	maxPublishRetryBackoff = 10 * time.Second
+	// publishTimeout is the timeout for each publish attempt
+	publishTimeout = 30 * time.Second
+)
+
 // TLSConfig holds TLS configuration for MQTT connection
 type TLSConfig struct {
 	Enabled            bool
@@ -207,13 +218,50 @@ func createTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 	return tlsCfg, nil
 }
 
-// Publish publishes a message to an MQTT topic using the client's configured QoS level
+// Publish publishes a message to an MQTT topic using the client's configured QoS level.
+// It includes retry logic with exponential backoff for connection-related failures
+// to ensure reliable message delivery during temporary network issues.
 func (c *Client) Publish(topic string, payload []byte) error {
-	token := c.client.Publish(topic, c.qos, false, payload)
-	if token.Wait(); token.Error() != nil {
-		return fmt.Errorf("failed to publish message: %w", token.Error())
+	var lastErr error
+	backoff := publishRetryBackoff
+
+	for i := 0; i < maxPublishRetries; i++ {
+		token := c.client.Publish(topic, c.qos, false, payload)
+
+		// Wait with timeout to avoid indefinite blocking
+		if token.WaitTimeout(publishTimeout) {
+			if token.Error() == nil {
+				return nil
+			}
+			lastErr = token.Error()
+		} else {
+			lastErr = fmt.Errorf("publish timeout after %v", publishTimeout)
+		}
+
+		// Skip delay on the last attempt
+		if i == maxPublishRetries-1 {
+			break
+		}
+
+		// Log retry attempt with connection status
+		c.logger.Warn("MQTT publish failed, retrying",
+			zap.Int("attempt", i+1),
+			zap.Int("maxRetries", maxPublishRetries),
+			zap.Duration("backoff", backoff),
+			zap.Bool("connected", c.client.IsConnected()),
+			zap.Error(lastErr),
+		)
+
+		time.Sleep(backoff)
+
+		// Exponential backoff with cap
+		backoff = backoff * 2
+		if backoff > maxPublishRetryBackoff {
+			backoff = maxPublishRetryBackoff
+		}
 	}
-	return nil
+
+	return fmt.Errorf("failed to publish message after %d retries: %w", maxPublishRetries, lastErr)
 }
 
 // Subscribe subscribes to an MQTT topic and stores the subscription for recovery

@@ -9,9 +9,10 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Kafka  KafkaConfig  `yaml:"kafka"`
-	MQTT   MQTTConfig   `yaml:"mqtt"`
-	Bridge BridgeConfig `yaml:"bridge"`
+	Kafka          KafkaConfig          `yaml:"kafka"`
+	MQTT           MQTTConfig           `yaml:"mqtt"`
+	Bridge         BridgeConfig         `yaml:"bridge"`
+	SchemaRegistry SchemaRegistryConfig `yaml:"schema_registry"` // Schema Registry configuration for Avro support
 }
 
 // KafkaSASLConfig contains SASL authentication settings for Kafka
@@ -60,10 +61,19 @@ type MQTTConfig struct {
 	TLS          MQTTTLSConfig `yaml:"tls"`           // TLS configuration
 }
 
+// AvroConfig contains Avro serialization/deserialization settings for a topic
+type AvroConfig struct {
+	// SchemaGroup is the schema group name in the registry
+	SchemaGroup string `yaml:"schema_group"`
+	// SchemaName is the name of the schema to use
+	SchemaName string `yaml:"schema_name"`
+}
+
 // TopicMapping defines a source and destination topic pair for bridging
 type TopicMapping struct {
-	SourceTopic string `yaml:"source_topic"` // Topic to read from
-	DestTopic   string `yaml:"dest_topic"`   // Topic to write to
+	SourceTopic string      `yaml:"source_topic"` // Topic to read from
+	DestTopic   string      `yaml:"dest_topic"`   // Topic to write to
+	Avro        *AvroConfig `yaml:"avro"`         // Optional Avro config for serialization/deserialization
 }
 
 // BridgeConfig contains bridge-specific settings
@@ -73,6 +83,24 @@ type BridgeConfig struct {
 	BufferSize  int           `yaml:"buffer_size"`
 	MQTTToKafka *TopicMapping `yaml:"mqtt_to_kafka"` // MQTT→Kafka topic mapping
 	KafkaToMQTT *TopicMapping `yaml:"kafka_to_mqtt"` // Kafka→MQTT topic mapping
+}
+
+// SchemaRegistryConfig contains Azure Event Hubs Schema Registry connection settings
+type SchemaRegistryConfig struct {
+	// FullyQualifiedNamespace is the fully qualified namespace of the Schema Registry
+	// e.g., "<namespace>.servicebus.windows.net"
+	FullyQualifiedNamespace string `yaml:"fully_qualified_namespace"`
+	// CacheEnabled enables schema caching (default: true)
+	CacheEnabled *bool `yaml:"cache_enabled"`
+	// TenantID is the Azure tenant ID for authentication (optional)
+	// If not provided, DefaultAzureCredential will be used
+	TenantID string `yaml:"tenant_id"`
+	// ClientID is the Azure client ID for authentication (optional)
+	// If not provided, DefaultAzureCredential will be used
+	ClientID string `yaml:"client_id"`
+	// ClientSecret is the Azure client secret for authentication (optional)
+	// If not provided, DefaultAzureCredential will be used
+	ClientSecret string `yaml:"client_secret"`
 }
 
 // LoadConfig loads configuration from a YAML file
@@ -108,6 +136,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Bridge.LogLevel == "" {
 		cfg.Bridge.LogLevel = "info"
+	}
+
+	// Set Schema Registry defaults
+	if cfg.SchemaRegistry.CacheEnabled == nil {
+		cacheEnabled := true
+		cfg.SchemaRegistry.CacheEnabled = &cacheEnabled
 	}
 
 	return &cfg, nil

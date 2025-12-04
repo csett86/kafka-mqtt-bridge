@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -21,6 +22,8 @@ import (
 const (
 	// maxWriteRetries is the maximum number of retries for transient write errors
 	maxWriteRetries = 10
+	// maxCommitRetries is the maximum number of retries for commit errors
+	maxCommitRetries = 5
 	// retryBackoff is the initial delay between retries
 	retryBackoff = 500 * time.Millisecond
 	// maxRetryBackoff is the maximum delay between retries
@@ -133,7 +136,9 @@ func NewClientWithConfig(cfg ClientConfig, logger *zap.Logger) (*Client, error) 
 			WriteBackoffMin: 100 * time.Millisecond,
 			WriteBackoffMax: 1 * time.Second,
 			BatchTimeout:    100 * time.Millisecond,
-			RequiredAcks:    kafka.RequireOne,
+			// RequireAll ensures messages are acknowledged by all in-sync replicas
+			// for stronger durability guarantees
+			RequiredAcks: kafka.RequireAll,
 		}
 		if transport != nil {
 			writer.Transport = transport
@@ -240,19 +245,38 @@ func createSASLMechanism(cfg *SASLConfig) (sasl.Mechanism, error) {
 	}
 }
 
-// isTransientError checks if the error is a transient connection error that should be retried
+// isTransientError checks if the error is a transient connection error that should be retried.
+// This includes network errors, Kafka broker errors that indicate temporary unavailability,
+// and I/O errors that typically occur during connection issues.
 func isTransientError(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	var netErr net.Error
-	if errors.As(err, &netErr) {
+	// Check for Kafka-specific errors first, since kafka.Error implements net.Error
+	var kafkaErr kafka.Error
+	if errors.As(err, &kafkaErr) {
+		// InvalidMessage indicates a corrupt message that won't succeed on retry
+		if kafkaErr == kafka.InvalidMessage {
+			return false
+		}
+		// The Temporary() method returns true for retriable Kafka errors
+		return kafkaErr.Temporary()
+	}
+
+	// Check for EOF which can happen when connection is closed
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
 
 	var opErr *net.OpError
-	return errors.As(err, &opErr)
+	if errors.As(err, &opErr) {
+		return true
+	}
+
+	// Check for network errors (includes timeouts)
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }
 
 // FetchMessage fetches a single message from Kafka without committing the offset.
@@ -293,12 +317,51 @@ func (c *Client) FetchMessage(ctx context.Context) (*kafka.Message, error) {
 	}
 }
 
-// CommitMessage commits the offset for a message after successful processing
+// CommitMessage commits the offset for a message after successful processing.
+// It includes retry logic with exponential backoff for transient errors to ensure
+// reliable offset commits even during temporary broker unavailability.
 func (c *Client) CommitMessage(ctx context.Context, msg *kafka.Message) error {
-	if err := c.reader.CommitMessages(ctx, *msg); err != nil {
-		return fmt.Errorf("failed to commit message: %w", err)
+	var lastErr error
+	backoff := retryBackoff
+
+	for i := 0; i < maxCommitRetries; i++ {
+		err := c.reader.CommitMessages(ctx, *msg)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return fmt.Errorf("failed to commit message: %w", ctx.Err())
+		}
+
+		// Check if it's a transient error that should be retried
+		if !isTransientError(err) {
+			return fmt.Errorf("failed to commit message: %w", err)
+		}
+
+		c.logger.Warn("Kafka commit failed, retrying",
+			zap.Int("attempt", i+1),
+			zap.Int("maxRetries", maxCommitRetries),
+			zap.Duration("backoff", backoff),
+			zap.Error(err),
+		)
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("failed to commit message: %w", ctx.Err())
+		case <-time.After(backoff):
+		}
+
+		// Exponential backoff with cap
+		backoff = backoff * 2
+		if backoff > maxRetryBackoff {
+			backoff = maxRetryBackoff
+		}
 	}
-	return nil
+
+	return fmt.Errorf("failed to commit message after %d retries: %w", maxCommitRetries, lastErr)
 }
 
 // ReadMessage reads a single message from Kafka with automatic reconnection
