@@ -53,9 +53,12 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_GROUP_MIN_SESSION_TIMEOUT_MS: 1000
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
       interval: 10s
@@ -73,6 +76,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-publisher:
+        condition: service_started
     volumes:
       - ./config:/config:ro
     restart: unless-stopped
@@ -83,14 +88,11 @@ services:
     depends_on:
       mosquitto:
         condition: service_healthy
-      bridge:
-        condition: service_started
     entrypoint: /bin/sh
     command:
       - -c
       - |
         echo "Starting MQTT publisher on topic 'transactions'..."
-        sleep 5
         i=1
         while true; do
           timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -125,14 +127,11 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      bridge:
-        condition: service_started
     entrypoint: /bin/sh
     command:
       - -c
       - |
         echo "Starting Kafka publisher on topic 'master_data'..."
-        sleep 10
         i=1
         while true; do
           timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
