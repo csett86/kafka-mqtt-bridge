@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "config/config.yaml", "Path to configuration file")
+	configPath := flag.String("config", "", "Path to configuration file (optional; if not provided, configuration is loaded from environment variables)")
 	flag.Parse()
 
 	logger, err := zap.NewProduction()
@@ -24,13 +24,25 @@ func main() {
 	}
 	defer logger.Sync()
 
-	cfg, err := config.LoadConfig(*configPath)
-	if err != nil {
-		logger.Fatal("Failed to load configuration", zap.Error(err))
+	var cfg *config.Config
+	if *configPath != "" {
+		cfg, err = config.LoadConfig(*configPath)
+		if err != nil {
+			logger.Fatal("Failed to load configuration from file", zap.String("config", *configPath), zap.Error(err))
+		}
+		logger.Info("Configuration loaded from file",
+			zap.String("config", *configPath),
+		)
+	} else {
+		cfg, err = config.LoadConfigFromEnv()
+		if err != nil {
+			logger.Fatal("Failed to load configuration from environment variables", zap.Error(err))
+		}
+		logger.Info("Configuration loaded from environment variables")
 	}
 
 	logger.Info("Starting Kafka-MQTT Bridge",
-		zap.String("config", *configPath),
+		zap.String("bridge_name", cfg.Bridge.Name),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())

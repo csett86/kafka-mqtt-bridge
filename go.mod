@@ -7,6 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/hamba/avro/v2 v2.30.0
+	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/segmentio/kafka-go v0.4.49
 	go.uber.org/zap v1.27.1
 	gopkg.in/yaml.v3 v3.0.1

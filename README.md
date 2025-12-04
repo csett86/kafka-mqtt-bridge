@@ -6,6 +6,7 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers bid
 
 - Bidirectional message bridging between Kafka and MQTT
 - Configurable Kafka and MQTT connection settings in a single config file
+- **Environment variable configuration for containerized deployments**
 - **Avro serialization/deserialization with Azure Event Hubs Schema Registry**
 - Static binary releases for linux and windows without any dependencies
 - Implemented in Go with very low memory footprint (<10MB)
@@ -46,13 +47,17 @@ This will create a binary in the `bin/` directory.
 
 ## Configuration
 
+The bridge supports two configuration methods:
+1. **YAML configuration file** - Traditional configuration with optional environment variable overrides
+2. **Environment variables only** - Recommended for containerized deployments (Docker, Kubernetes)
+
+### YAML Configuration File
+
 Create a `config/config.yaml` file or copy from the example:
 
 ```bash
 cp config/config.yaml config/local.yaml
 ```
-
-### Configuration
 
 Edit the configuration file with your Kafka and MQTT settings:
 
@@ -79,6 +84,101 @@ bridge:
   kafka_to_mqtt:
     source_topic: "events"
     dest_topic: "kafka/events"
+```
+
+### Environment Variable Configuration
+
+All configuration options can be set via environment variables with the `BRIDGE_` prefix. This is the recommended approach for containerized deployments following the [12-factor app](https://12factor.net/config) methodology.
+
+Environment variables use underscore-separated names that match the YAML structure:
+
+| Environment Variable | YAML Equivalent | Description |
+|---------------------|-----------------|-------------|
+| `BRIDGE_KAFKA_BROKER` | `kafka.broker` | Kafka broker address |
+| `BRIDGE_KAFKA_GROUP_ID` | `kafka.group_id` | Kafka consumer group ID |
+| `BRIDGE_KAFKA_SASL_ENABLED` | `kafka.sasl.enabled` | Enable SASL authentication |
+| `BRIDGE_KAFKA_SASL_MECHANISM` | `kafka.sasl.mechanism` | SASL mechanism (PLAIN, SCRAM-SHA-256, SCRAM-SHA-512) |
+| `BRIDGE_KAFKA_SASL_USERNAME` | `kafka.sasl.username` | SASL username |
+| `BRIDGE_KAFKA_SASL_PASSWORD` | `kafka.sasl.password` | SASL password |
+| `BRIDGE_KAFKA_TLS_ENABLED` | `kafka.tls.enabled` | Enable TLS connection |
+| `BRIDGE_KAFKA_TLS_CA_FILE` | `kafka.tls.ca_file` | Path to CA certificate |
+| `BRIDGE_KAFKA_TLS_CERT_FILE` | `kafka.tls.cert_file` | Path to client certificate |
+| `BRIDGE_KAFKA_TLS_KEY_FILE` | `kafka.tls.key_file` | Path to client key |
+| `BRIDGE_KAFKA_TLS_INSECURE_SKIP_VERIFY` | `kafka.tls.insecure_skip_verify` | Skip TLS verification |
+| `BRIDGE_MQTT_BROKER` | `mqtt.broker` | MQTT broker hostname |
+| `BRIDGE_MQTT_PORT` | `mqtt.port` | MQTT broker port |
+| `BRIDGE_MQTT_USERNAME` | `mqtt.username` | MQTT username |
+| `BRIDGE_MQTT_PASSWORD` | `mqtt.password` | MQTT password |
+| `BRIDGE_MQTT_CLIENT_ID` | `mqtt.client_id` | MQTT client ID |
+| `BRIDGE_MQTT_QOS` | `mqtt.qos` | MQTT QoS level (0, 1, or 2) |
+| `BRIDGE_MQTT_CLEAN_SESSION` | `mqtt.clean_session` | MQTT clean session flag |
+| `BRIDGE_MQTT_TLS_ENABLED` | `mqtt.tls.enabled` | Enable MQTT TLS |
+| `BRIDGE_MQTT_TLS_CA_FILE` | `mqtt.tls.ca_file` | Path to CA certificate |
+| `BRIDGE_MQTT_TLS_CERT_FILE` | `mqtt.tls.cert_file` | Path to client certificate |
+| `BRIDGE_MQTT_TLS_KEY_FILE` | `mqtt.tls.key_file` | Path to client key |
+| `BRIDGE_MQTT_TLS_INSECURE_SKIP_VERIFY` | `mqtt.tls.insecure_skip_verify` | Skip TLS verification |
+| `BRIDGE_BRIDGE_NAME` | `bridge.name` | Bridge instance name |
+| `BRIDGE_BRIDGE_LOG_LEVEL` | `bridge.log_level` | Log level (debug, info, warn, error) |
+| `BRIDGE_BRIDGE_BUFFER_SIZE` | `bridge.buffer_size` | Message buffer size |
+| `BRIDGE_BRIDGE_MQTT_TO_KAFKA_SOURCE_TOPIC` | `bridge.mqtt_to_kafka.source_topic` | MQTT source topic |
+| `BRIDGE_BRIDGE_MQTT_TO_KAFKA_DEST_TOPIC` | `bridge.mqtt_to_kafka.dest_topic` | Kafka destination topic |
+| `BRIDGE_BRIDGE_KAFKA_TO_MQTT_SOURCE_TOPIC` | `bridge.kafka_to_mqtt.source_topic` | Kafka source topic |
+| `BRIDGE_BRIDGE_KAFKA_TO_MQTT_DEST_TOPIC` | `bridge.kafka_to_mqtt.dest_topic` | MQTT destination topic |
+| `BRIDGE_SCHEMA_REGISTRY_FULLY_QUALIFIED_NAMESPACE` | `schema_registry.fully_qualified_namespace` | Azure Schema Registry namespace |
+| `BRIDGE_SCHEMA_REGISTRY_CACHE_ENABLED` | `schema_registry.cache_enabled` | Enable schema caching |
+| `BRIDGE_SCHEMA_REGISTRY_TENANT_ID` | `schema_registry.tenant_id` | Azure tenant ID |
+| `BRIDGE_SCHEMA_REGISTRY_CLIENT_ID` | `schema_registry.client_id` | Azure client ID |
+| `BRIDGE_SCHEMA_REGISTRY_CLIENT_SECRET` | `schema_registry.client_secret` | Azure client secret |
+
+#### Example: Docker Compose
+
+```yaml
+services:
+  kafka-mqtt-bridge:
+    image: kafka-mqtt-bridge:latest
+    environment:
+      - BRIDGE_KAFKA_BROKER=kafka:9092
+      - BRIDGE_KAFKA_GROUP_ID=my-bridge
+      - BRIDGE_MQTT_BROKER=mqtt
+      - BRIDGE_MQTT_PORT=1883
+      - BRIDGE_BRIDGE_NAME=my-bridge
+      - BRIDGE_BRIDGE_LOG_LEVEL=info
+      - BRIDGE_BRIDGE_MQTT_TO_KAFKA_SOURCE_TOPIC=mqtt/events
+      - BRIDGE_BRIDGE_MQTT_TO_KAFKA_DEST_TOPIC=kafka-events
+      - BRIDGE_BRIDGE_KAFKA_TO_MQTT_SOURCE_TOPIC=kafka-events
+      - BRIDGE_BRIDGE_KAFKA_TO_MQTT_DEST_TOPIC=mqtt/events
+```
+
+#### Example: Kubernetes ConfigMap/Secret
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-mqtt-bridge-config
+data:
+  BRIDGE_KAFKA_BROKER: "kafka:9092"
+  BRIDGE_MQTT_BROKER: "mqtt"
+  BRIDGE_MQTT_PORT: "1883"
+  BRIDGE_BRIDGE_NAME: "my-bridge"
+  BRIDGE_BRIDGE_LOG_LEVEL: "info"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-mqtt-bridge-secrets
+stringData:
+  BRIDGE_KAFKA_SASL_PASSWORD: "your-password"
+  BRIDGE_MQTT_PASSWORD: "your-mqtt-password"
+```
+
+### Environment Variable Overrides
+
+When using a YAML configuration file, environment variables can still override any YAML values. This allows you to keep non-sensitive configuration in a file while injecting secrets via environment variables:
+
+```bash
+# Start with YAML file but override sensitive values
+BRIDGE_KAFKA_SASL_PASSWORD=secret ./kafka-mqtt-bridge -config config/config.yaml
 ```
 
 ### Avro Schema Registry Configuration
@@ -120,20 +220,41 @@ schema_registry:
 
 ## Usage
 
-### Running the Binary
+### Running with Configuration File
 
 ```bash
 ./bin/kafka-mqtt-bridge -config config/config.yaml
 ```
 
+### Running with Environment Variables Only
+
+```bash
+# No -config flag needed - configuration loaded from environment variables
+export BRIDGE_KAFKA_BROKER=kafka:9092
+export BRIDGE_MQTT_BROKER=mqtt
+export BRIDGE_BRIDGE_MQTT_TO_KAFKA_SOURCE_TOPIC=mqtt/events
+export BRIDGE_BRIDGE_MQTT_TO_KAFKA_DEST_TOPIC=kafka-events
+./bin/kafka-mqtt-bridge
+```
+
+### Running in Docker
+
+```bash
+docker run -e BRIDGE_KAFKA_BROKER=kafka:9092 \
+           -e BRIDGE_MQTT_BROKER=mqtt \
+           -e BRIDGE_BRIDGE_MQTT_TO_KAFKA_SOURCE_TOPIC=mqtt/events \
+           -e BRIDGE_BRIDGE_MQTT_TO_KAFKA_DEST_TOPIC=kafka-events \
+           kafka-mqtt-bridge:latest
+```
+
 ### Running Locally
 
 ```bash
-# With default config
-go run ./cmd/bridge/main.go
-
-# With custom config
+# With config file
 go run ./cmd/bridge/main.go -config config/local.yaml
+
+# With environment variables only
+BRIDGE_KAFKA_BROKER=localhost:9092 BRIDGE_MQTT_BROKER=localhost go run ./cmd/bridge/main.go
 ```
 
 ## Development
@@ -169,7 +290,7 @@ The integration tests cover:
 - **Kafka to MQTT Bridge**: Tests message flow from Kafka to MQTT
 - **MQTT to Kafka Bridge**: Tests message flow from MQTT to Kafka
 
-#### Environment Variables
+#### Test Environment Variables
 
 You can customize test configuration with environment variables:
 
@@ -241,6 +362,7 @@ kafka-mqtt-bridge/
 
 - `github.com/segmentio/kafka-go` - Kafka client library
 - `github.com/eclipse/paho.mqtt.golang` - MQTT client library
+- `github.com/kelseyhightower/envconfig` - Environment variable configuration
 - `github.com/linkedin/goavro/v2` - Avro serialization/deserialization
 - `github.com/Azure/azure-sdk-for-go/sdk/azidentity` - Azure authentication
 - `github.com/Azure/azure-sdk-for-go/sdk/azcore` - Azure core SDK
