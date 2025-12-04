@@ -54,10 +54,8 @@ services:
       KAFKA_MESSAGE_MAX_BYTES: 2097152
       KAFKA_REPLICA_FETCH_MAX_BYTES: 2097152
       # Tuning for fast consumer group rebalancing in integration tests
-      # Disable initial rebalance delay so consumers join groups immediately
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      # Allow shorter session timeouts for faster failure detection
-      KAFKA_GROUP_MIN_SESSION_TIMEOUT_MS: 1000
+      # Reduce initial rebalance delay for faster consumer group joins (default is 3s)
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 100
       # Create offsets topic with 1 partition for faster initialization
       KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
     healthcheck:
