@@ -82,7 +82,7 @@ services:
       - ./config:/config:ro
     restart: unless-stopped
 
-  # MQTT Publisher - publishes to "transactions" topic every 5 seconds
+  # MQTT Publisher - publishes to "transactions" topic every second
   mqtt-publisher:
     image: eclipse-mosquitto:2.0
     depends_on:
@@ -100,7 +100,7 @@ services:
           mosquitto_pub -h mosquitto -p 1883 -t transactions -m "$$message"
           echo "[MQTT->Kafka] Published to 'transactions': $$message"
           i=$$((i + 1))
-          sleep 5
+          sleep 1
         done
 
   # Kafka Subscriber - listens to "transactions" topic
