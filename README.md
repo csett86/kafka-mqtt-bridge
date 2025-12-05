@@ -4,21 +4,21 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers bid
 
 ## Features
 
-- Bidirectional message bridging between Kafka and MQTT
+- **Bidirectional** message bridging between Kafka and MQTT
 - Configurable Kafka and MQTT connection settings in a single config file
-- **Environment variable configuration for containerized deployments**
-- **Avro serialization/deserialization with Azure Event Hubs Schema Registry**
-- Static binary releases for linux and windows without any dependencies
-- Implemented in Go with very low memory footprint (<10MB)
+- Environment variable configuration for containerized deployments
+- **Avro** serialization/deserialization with Azure Event Hubs Schema Registry
+- Static **binary releases for windows**, linux and mac without any additional runtime dependencies
+- Implemented in Go with **very low memory footprint** (<10MB)
 - Graceful shutdown handling
 - Comprehensive logging with Zap
 - Production-ready code structure following Go best practices
 
 ## Prerequisites
 
-- Go 1.24 or higher
 - Apache Kafka 2.8+
 - MQTT Broker (e.g., Mosquitto, HiveMQ)
+- Go 1.24 or higher (only for building)
 - Docker and Docker Compose (optional, for integration tests)
 
 ## Known Limitations
