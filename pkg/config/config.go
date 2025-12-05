@@ -39,10 +39,11 @@ type KafkaTLSConfig struct {
 
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
-	Broker  string          `yaml:"broker" envconfig:"BROKER"`
-	GroupID string          `yaml:"group_id" envconfig:"GROUP_ID"`
-	SASL    KafkaSASLConfig `yaml:"sasl" envconfig:"SASL"` // SASL authentication settings
-	TLS     KafkaTLSConfig  `yaml:"tls" envconfig:"TLS"`   // TLS settings
+	Broker              string          `yaml:"broker" envconfig:"BROKER"`
+	GroupID             string          `yaml:"group_id" envconfig:"GROUP_ID"`
+	SASL                KafkaSASLConfig `yaml:"sasl" envconfig:"SASL"`                                   // SASL authentication settings
+	TLS                 KafkaTLSConfig  `yaml:"tls" envconfig:"TLS"`                                     // TLS settings
+	ValidateTopicExists bool            `yaml:"validate_topic_exists" envconfig:"VALIDATE_TOPIC_EXISTS"` // Validate that read topic exists on startup
 }
 
 // MQTTTLSConfig contains TLS settings for MQTT connection

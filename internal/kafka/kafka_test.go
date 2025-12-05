@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -134,5 +135,20 @@ func TestIsTransientError(t *testing.T) {
 				t.Errorf("isTransientError(%v) = %v, want %v", tt.err, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestErrTopicDoesNotExist(t *testing.T) {
+	// Test that ErrTopicDoesNotExist can be used with errors.Is
+	wrappedErr := fmt.Errorf("topic validation failed: %w: my-topic", ErrTopicDoesNotExist)
+
+	if !errors.Is(wrappedErr, ErrTopicDoesNotExist) {
+		t.Error("Expected errors.Is to return true for wrapped ErrTopicDoesNotExist")
+	}
+
+	// Test that ErrTopicDoesNotExist has expected message
+	expectedMsg := "topic does not exist"
+	if ErrTopicDoesNotExist.Error() != expectedMsg {
+		t.Errorf("Expected error message %q, got %q", expectedMsg, ErrTopicDoesNotExist.Error())
 	}
 }

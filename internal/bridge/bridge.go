@@ -68,12 +68,13 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 	}
 
 	kafkaClient, err := kafka.NewClientWithConfig(kafka.ClientConfig{
-		Broker:     cfg.Kafka.Broker,
-		ReadTopic:  kafkaReadTopic,
-		WriteTopic: kafkaWriteTopic,
-		GroupID:    cfg.Kafka.GroupID,
-		SASL:       saslConfig,
-		TLS:        kafkaTLSConfig,
+		Broker:              cfg.Kafka.Broker,
+		ReadTopic:           kafkaReadTopic,
+		WriteTopic:          kafkaWriteTopic,
+		GroupID:             cfg.Kafka.GroupID,
+		SASL:                saslConfig,
+		TLS:                 kafkaTLSConfig,
+		ValidateTopicExists: cfg.Kafka.ValidateTopicExists,
 	}, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kafka client: %w", err)
