@@ -237,10 +237,12 @@ bridge:
 }
 
 // TestKafkaToMQTTBridgeStartedFirst tests the bridge when it starts BEFORE messages are published:
-// 1. Builds and starts the bridge binary first
-// 2. Then publishes a message to Kafka
-// 3. Verifies the bridge forwards the message to MQTT
-// This tests the scenario where the bridge is waiting for messages to arrive.
+// 1. Builds the bridge binary
+// 2. Creates the Kafka topic by publishing an initial message
+// 3. Starts the bridge binary
+// 4. Publishes a new message to Kafka
+// 5. Verifies the bridge forwards the new message to MQTT
+// This tests the scenario where the bridge is running and waiting for new messages to arrive.
 func TestKafkaToMQTTBridgeStartedFirst(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -296,6 +298,22 @@ bridge:
 
 	t.Logf("Built bridge binary at: %s", binaryPath)
 
+	// Setup Kafka writer - we need this early to create the topic
+	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
+	defer kafkaWriter.Close()
+
+	// Publish an initial message to ensure the Kafka topic is created
+	// This simulates a real-world scenario where the topic already exists
+	initialMessage := "initial-setup-message-" + testIDStr
+	err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+		Key:   []byte("setup-key"),
+		Value: []byte(initialMessage),
+	}, 10)
+	if err != nil {
+		t.Fatalf("Failed to create Kafka topic with initial message: %v", err)
+	}
+	t.Logf("Created Kafka topic %s with initial message", kafkaTopic)
+
 	// Setup MQTT subscriber to receive messages from the bridge
 	receivedMessages := make(chan string, 10)
 	mqttClient := setupMQTTSubscriber(t, mqttTopic, receivedMessages)
@@ -304,7 +322,7 @@ bridge:
 	// Give subscriber time to be ready
 	time.Sleep(500 * time.Millisecond)
 
-	// Start the bridge binary BEFORE publishing any messages
+	// Start the bridge binary AFTER the topic exists but BEFORE publishing the test message
 	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
 	bridgeCmd.Dir = tmpDir
 	bridgeCmd.Stdout = os.Stdout
@@ -322,17 +340,24 @@ bridge:
 		}
 	}()
 
-	t.Log("Bridge binary started first, waiting for it to initialize...")
+	t.Log("Bridge binary started, waiting for it to initialize and consume initial message...")
 
-	// Give bridge time to start and connect to Kafka
+	// Give bridge time to start, connect to Kafka, and process the initial message
 	time.Sleep(5 * time.Second)
 
-	// Setup Kafka writer and publish message AFTER bridge is running
-	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
-	defer kafkaWriter.Close()
+	// Drain any initial messages from the MQTT channel (the setup message)
+drainLoop:
+	for {
+		select {
+		case msg := <-receivedMessages:
+			t.Logf("Drained initial message from MQTT: %s", msg)
+		default:
+			break drainLoop
+		}
+	}
 
-	// Publish message to Kafka - the bridge should forward it to MQTT
-	err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+	// Publish the test message to Kafka AFTER bridge is running
+	err = writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
 		Key:   []byte("test-key"),
 		Value: []byte(testMessage),
 	}, 10)
