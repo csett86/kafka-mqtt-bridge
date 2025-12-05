@@ -27,28 +27,11 @@ jobs:
 
   build:
     needs: test
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - os: linux
-            arch: amd64
-            runner: ubuntu-latest
-          - os: linux
-            arch: arm64
-            runner: ubuntu-latest
-          - os: windows
-            arch: amd64
-            runner: windows-latest
-          - os: windows
-            arch: arm64
-            runner: windows-latest
-          - os: darwin
-            arch: amd64
-            runner: macos-latest
-          - os: darwin
-            arch: arm64
-            runner: macos-latest
+        os: [linux, windows, darwin]
+        arch: [amd64, arm64]
 
     steps:
     - name: Checkout code
