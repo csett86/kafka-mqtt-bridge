@@ -888,6 +888,134 @@ collectLoop:
 	t.Log("Successfully tested Kafka to MQTT bridge with QoS 2 (exactly-once)")
 }
 
+// TestKafkaToMQTTBridgeMessagePublishedBeforeBridgeStarts tests the scenario where:
+// 1. A message is published to Kafka BEFORE the bridge is started
+// 2. The bridge is then started
+// 3. The bridge should read the pre-existing message and forward it to MQTT
+//
+// This test verifies that the bridge correctly handles messages that exist in Kafka
+// before the bridge consumer joins the consumer group. The Kafka client is configured
+// with StartOffset: kafka.FirstOffset to ensure new consumer groups read from the
+// beginning of the topic.
+func TestKafkaToMQTTBridgeMessagePublishedBeforeBridgeStarts(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Use unique topics for this test
+	testID := time.Now().UnixNano()
+	testIDStr := strconv.FormatInt(testID, 10)
+	kafkaTopic := "test-pre-bridge-kafka-" + testIDStr
+	mqttTopic := "mqtt/pre-bridge/test/" + testIDStr
+	testMessage := "pre-existing-message-" + testIDStr
+
+	// Build explicit configuration values
+	kafkaGroupID := "test-pre-bridge-group-" + testIDStr
+	mqttClientID := "test-pre-bridge-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
+
+	// Create a temporary config file for the bridge
+	configContent := `
+kafka:
+  broker: "` + kafkaBrokers + `"
+  group_id: "` + kafkaGroupID + `"
+
+mqtt:
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
+
+bridge:
+  name: "test-pre-bridge"
+  log_level: "debug"
+  buffer_size: 100
+  kafka_to_mqtt:
+    source_topic: "` + kafkaTopic + `"
+    dest_topic: "` + mqttTopic + `"
+`
+
+	// Create temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	t.Logf("Created config file at: %s", configPath)
+
+	// Build the bridge binary
+	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
+	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
+	buildCmd.Dir = getProjectRoot()
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
+	}
+
+	t.Logf("Built bridge binary at: %s", binaryPath)
+
+	// IMPORTANT: Setup MQTT subscriber FIRST to ensure we don't miss any messages
+	receivedMessages := make(chan string, 10)
+	mqttClient := setupMQTTSubscriber(t, mqttTopic, receivedMessages)
+	defer mqttClient.Disconnect(250)
+
+	// Give subscriber time to be ready
+	time.Sleep(500 * time.Millisecond)
+
+	// STEP 1: Publish message to Kafka BEFORE starting the bridge
+	// This is the key part of this test - the message exists before the bridge starts
+	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
+	defer kafkaWriter.Close()
+
+	err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+		Key:   []byte("pre-existing-key"),
+		Value: []byte(testMessage),
+	}, 10)
+	if err != nil {
+		t.Fatalf("Failed to write message to Kafka: %v", err)
+	}
+
+	t.Logf("STEP 1: Published message to Kafka topic %s BEFORE bridge started: %s", kafkaTopic, testMessage)
+
+	// Add a small delay to ensure the message is committed to Kafka
+	time.Sleep(500 * time.Millisecond)
+
+	// STEP 2: Start the bridge binary AFTER the message is already in Kafka
+	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
+	bridgeCmd.Dir = tmpDir
+	bridgeCmd.Stdout = os.Stdout
+	bridgeCmd.Stderr = os.Stderr
+
+	if err := bridgeCmd.Start(); err != nil {
+		t.Fatalf("Failed to start bridge: %v", err)
+	}
+
+	// Ensure we clean up the process
+	defer func() {
+		if bridgeCmd.Process != nil {
+			_ = bridgeCmd.Process.Signal(syscall.SIGTERM)
+			_ = bridgeCmd.Wait()
+		}
+	}()
+
+	t.Log("STEP 2: Bridge binary started AFTER message was published, waiting for it to initialize...")
+
+	// Give bridge time to start, connect to Kafka, and read the pre-existing message
+	time.Sleep(5 * time.Second)
+
+	// STEP 3: Verify the pre-existing message was forwarded to MQTT
+	select {
+	case received := <-receivedMessages:
+		if received != testMessage {
+			t.Errorf("Message mismatch: got %q, want %q", received, testMessage)
+		} else {
+			t.Logf("STEP 3: Successfully received pre-existing message on MQTT: %s", received)
+		}
+	case <-time.After(15 * time.Second):
+		t.Error("Timeout waiting for pre-existing message on MQTT - bridge may not be reading from beginning of topic")
+	}
+
+	t.Log("Successfully tested scenario: Message published to Kafka first, then bridge created")
+}
+
 // Helper functions
 
 func setupKafkaWriter(t *testing.T, topic string) *kafka.Writer {
