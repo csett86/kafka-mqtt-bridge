@@ -388,6 +388,55 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 For issues and questions, please open an issue on GitHub.
 
+## About This Project: A GitHub Copilot Coding Agent Experiment
+
+This project is not only a functional Kafka-MQTT bridge but also serves as an exploration of what's possible with the [GitHub Copilot coding agent](https://docs.github.com/en/copilot/using-github-copilot/using-copilot-coding-agent-to-work-on-tasks). Nearly the entire codebase was developed through natural language prompts to the coding agent, demonstrating its capabilities for autonomous software development.
+
+### Project History
+
+The project was developed almost entirely through the GitHub Copilot coding agent over approximately one week (November 28 - December 5, 2025). Here's a summary of the major development milestones:
+
+**Foundation (November 28-29)**
+- Initial integration test suite with Docker-based Kafka and MQTT infrastructure
+- GitHub Actions workflows for building, testing, and releasing
+- Bidirectional MQTT↔Kafka bridging
+- Multi-platform static binary builds (Linux, Windows, macOS for amd64/arm64)
+- Dynamic topic mapping with wildcard support
+- Performance tests with memory leak detection
+
+**Enterprise Features (November 29 - December 1)**
+- TLS and mutual TLS authentication for MQTT
+- SASL/PLAIN authentication for Kafka (Azure Event Hubs compatibility)
+- Connection recovery with automatic reconnection for both Kafka and MQTT
+- MQTT QoS support (including QoS 2 exactly-once delivery)
+- Graceful shutdown with proper Kafka offset commits
+- Apache License 2.0 based on dependency analysis
+- Dependabot configuration for automated dependency updates
+- Copilot instructions for improved agent performance
+
+**Advanced Integrations (December 2-5)**
+- Azure Event Hubs integration with SAS token authentication
+- Azure Event Hubs Emulator for local integration testing
+- Avro serialization/deserialization with Azure Schema Registry
+- Migration to Apache Kafka in KRaft mode (no Zookeeper)
+- Docker Compose demo environment with bidirectional message flow
+- Environment variable configuration for containerized deployments
+- Docker image publishing to GitHub Container Registry
+
+### Statistics
+
+- **49 pull requests** created by the Copilot coding agent
+- **~3,500 lines of Go code** generated
+- **Comprehensive test coverage** including unit, integration, performance, and reliability tests
+- **Complete CI/CD pipeline** with automated testing, building, and releasing
+
+This experiment demonstrates that AI coding agents can handle complex, production-quality software development tasks including:
+- Designing and implementing distributed systems
+- Writing comprehensive test suites
+- Setting up CI/CD pipelines
+- Creating documentation
+- Iterating based on review feedback
+
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
