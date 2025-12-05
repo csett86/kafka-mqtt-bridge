@@ -236,6 +236,127 @@ bridge:
 	t.Log("Successfully tested Kafka to MQTT bridge flow")
 }
 
+// TestKafkaToMQTTBridgeFirst tests the bridge component when the bridge is created first:
+// 1. Builds the bridge binary
+// 2. Starts the bridge binary FIRST
+// 3. Publishes a message to Kafka AFTER the bridge is running
+// 4. Verifies the bridge forwards the message to MQTT
+func TestKafkaToMQTTBridgeFirst(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Use unique topics for this test
+	testID := time.Now().UnixNano()
+	testIDStr := strconv.FormatInt(testID, 10)
+	kafkaTopic := "test-bridge-first-kafka-" + testIDStr
+	mqttTopic := "mqtt/bridge/first/test/" + testIDStr
+	testMessage := "bridge-first-test-message-" + testIDStr
+
+	// Build explicit configuration values
+	kafkaGroupID := "test-bridge-first-group-" + testIDStr
+	mqttClientID := "test-bridge-first-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
+
+	// Create a temporary config file for the bridge
+	configContent := `
+kafka:
+  broker: "` + kafkaBrokers + `"
+  group_id: "` + kafkaGroupID + `"
+
+mqtt:
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
+
+bridge:
+  name: "test-bridge-first"
+  log_level: "debug"
+  buffer_size: 100
+  kafka_to_mqtt:
+    source_topic: "` + kafkaTopic + `"
+    dest_topic: "` + mqttTopic + `"
+`
+
+	// Create temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	t.Logf("Created config file at: %s", configPath)
+
+	// Build the bridge binary
+	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
+	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
+	buildCmd.Dir = getProjectRoot()
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
+	}
+
+	t.Logf("Built bridge binary at: %s", binaryPath)
+
+	// Setup MQTT subscriber to receive messages from the bridge
+	receivedMessages := make(chan string, 10)
+	mqttClient := setupMQTTSubscriber(t, mqttTopic, receivedMessages)
+	defer mqttClient.Disconnect(250)
+
+	// Give subscriber time to be ready
+	time.Sleep(500 * time.Millisecond)
+
+	// Start the bridge binary FIRST (before publishing messages to Kafka)
+	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
+	bridgeCmd.Dir = tmpDir
+	bridgeCmd.Stdout = os.Stdout
+	bridgeCmd.Stderr = os.Stderr
+
+	if err := bridgeCmd.Start(); err != nil {
+		t.Fatalf("Failed to start bridge: %v", err)
+	}
+
+	// Ensure we clean up the process
+	defer func() {
+		if bridgeCmd.Process != nil {
+			_ = bridgeCmd.Process.Signal(syscall.SIGTERM)
+			_ = bridgeCmd.Wait()
+		}
+	}()
+
+	t.Log("Bridge binary started FIRST, waiting for it to initialize...")
+
+	// Give bridge time to start and connect to Kafka
+	time.Sleep(5 * time.Second)
+
+	// Setup Kafka writer and publish message AFTER the bridge has started
+	kafkaWriter := setupKafkaWriter(t, kafkaTopic)
+	defer kafkaWriter.Close()
+
+	// Publish message to Kafka - the running bridge should forward it to MQTT
+	err := writeMessageWithRetry(ctx, kafkaWriter, kafka.Message{
+		Key:   []byte("test-key"),
+		Value: []byte(testMessage),
+	}, 10)
+	if err != nil {
+		t.Fatalf("Failed to write message to Kafka: %v", err)
+	}
+
+	t.Logf("Published message to Kafka topic %s AFTER bridge started: %s", kafkaTopic, testMessage)
+
+	// Wait for the message to appear on MQTT (forwarded by the bridge)
+	select {
+	case received := <-receivedMessages:
+		if received != testMessage {
+			t.Errorf("Message mismatch: got %q, want %q", received, testMessage)
+		} else {
+			t.Logf("Successfully received bridged message on MQTT: %s", received)
+		}
+	case <-time.After(15 * time.Second):
+		t.Error("Timeout waiting for bridged message on MQTT")
+	}
+
+	t.Log("Successfully tested Kafka to MQTT bridge flow (bridge started first)")
+}
+
 // TestBridgeMultipleMessages tests the bridge with multiple messages using the built binary
 func TestBridgeMultipleMessages(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
