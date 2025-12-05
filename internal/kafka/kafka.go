@@ -105,11 +105,13 @@ func NewClientWithConfig(cfg ClientConfig, logger *zap.Logger) (*Client, error) 
 	var reader *kafka.Reader
 	if cfg.ReadTopic != "" {
 		readerConfig := kafka.ReaderConfig{
-			Brokers:        []string{cfg.Broker},
-			Topic:          cfg.ReadTopic,
-			GroupID:        cfg.GroupID,
-			StartOffset:    kafka.FirstOffset, // Start from beginning for new consumer groups
-			CommitInterval: 0,                 // Disable auto-commit; we commit manually after successful processing
+			Brokers:                []string{cfg.Broker},
+			Topic:                  cfg.ReadTopic,
+			GroupID:                cfg.GroupID,
+			StartOffset:            kafka.FirstOffset, // Start from beginning for new consumer groups
+			CommitInterval:         0,                 // Disable auto-commit; we commit manually after successful processing
+			WatchPartitionChanges:  true,              // Enable dynamic partition discovery (handles topic created after consumer starts)
+			PartitionWatchInterval: 1 * time.Second,   // Check for new partitions every second
 			// Connection recovery settings
 			MaxAttempts:       0, // Unlimited retries for connection failures
 			ReadBackoffMin:    100 * time.Millisecond,
