@@ -61,13 +61,12 @@ type TLSConfig struct {
 
 // ClientConfig contains all configuration for creating a Kafka client
 type ClientConfig struct {
-	Broker              string
-	ReadTopic           string
-	WriteTopic          string
-	GroupID             string
-	SASL                *SASLConfig
-	TLS                 *TLSConfig
-	ValidateTopicExists bool // If true, validates that read topic exists at creation time
+	Broker     string
+	ReadTopic  string
+	WriteTopic string
+	GroupID    string
+	SASL       *SASLConfig
+	TLS        *TLSConfig
 }
 
 // NewClient creates a new Kafka client with separate read and write topics
@@ -103,8 +102,8 @@ func NewClientWithConfig(cfg ClientConfig, logger *zap.Logger) (*Client, error) 
 		}
 	}
 
-	// Validate topic exists if configured
-	if cfg.ValidateTopicExists && cfg.ReadTopic != "" {
+	// Validate topic exists when a read topic is configured
+	if cfg.ReadTopic != "" {
 		if err := validateTopicExists(cfg.Broker, cfg.ReadTopic, dialer); err != nil {
 			return nil, fmt.Errorf("topic validation failed: %w", err)
 		}

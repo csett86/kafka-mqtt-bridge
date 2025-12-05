@@ -1036,7 +1036,7 @@ func setupMQTTSubscriberWithQoS(t *testing.T, topic string, qos byte, messages c
 }
 
 // TestKafkaReaderFailsForNonExistentTopic tests that the bridge fails with an error
-// when the validate_topic_exists option is enabled and the topic does not exist.
+// when the configured Kafka source topic does not exist.
 func TestKafkaReaderFailsForNonExistentTopic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -1052,12 +1052,11 @@ func TestKafkaReaderFailsForNonExistentTopic(t *testing.T) {
 	mqttClientID := "test-nonexistent-" + testIDStr
 	mqttPortStr := strconv.Itoa(mqttPort)
 
-	// Create a temporary config file with validate_topic_exists: true
+	// Create a temporary config file - topic validation is automatic for readers
 	configContent := `
 kafka:
   broker: "` + kafkaBrokers + `"
   group_id: "` + kafkaGroupID + `"
-  validate_topic_exists: true
 
 mqtt:
   broker: "` + mqttBroker + `"
@@ -1110,7 +1109,7 @@ bridge:
 
 	t.Logf("Bridge correctly failed with error: %v", err)
 	t.Logf("Output: %s", outputStr)
-	t.Log("Successfully verified that bridge fails when topic does not exist and validate_topic_exists is enabled")
+	t.Log("Successfully verified that bridge fails when Kafka source topic does not exist")
 }
 
 // containsAny checks if s contains any of the substrings
