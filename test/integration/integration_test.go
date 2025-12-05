@@ -515,9 +515,9 @@ func TestBridgeMultipleMessagesStartedFirst(t *testing.T) {
 	mqttTopic := "mqtt/bridge/multi-first/" + testIDStr
 
 	testMessages := []string{
-		"bridge-first-message-1",
-		"bridge-first-message-2",
-		"bridge-first-message-3",
+		"bridge-first-message-1-" + testIDStr,
+		"bridge-first-message-2-" + testIDStr,
+		"bridge-first-message-3-" + testIDStr,
 	}
 
 	// Build explicit configuration values
