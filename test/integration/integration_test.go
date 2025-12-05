@@ -933,6 +933,10 @@ func setupKafkaReader(t *testing.T, topic string) *kafka.Reader {
 		MinBytes: 1,
 		MaxBytes: 10e6,
 		MaxWait:  100 * time.Millisecond,
+		// Tuning for fast consumer group rebalancing in integration tests
+		HeartbeatInterval: 1 * time.Second, // Faster heartbeats for quicker failure detection
+		SessionTimeout:    6 * time.Second, // Shorter session timeout for faster group membership (minimum 3x heartbeat)
+		RebalanceTimeout:  6 * time.Second, // Shorter rebalance timeout
 	})
 }
 

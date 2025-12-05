@@ -188,11 +188,11 @@ func (s *Serializer) GetSchemaID() string {
 
 // Deserializer provides Avro deserialization with Schema Registry integration
 type Deserializer struct {
-	client  *schemaregistry.Client
-	schemas map[string]avro.Schema
+	client     *schemaregistry.Client
+	schemas    map[string]avro.Schema
 	regSchemas map[string]*schemaregistry.Schema
-	logger  *zap.Logger
-	mu      sync.RWMutex
+	logger     *zap.Logger
+	mu         sync.RWMutex
 }
 
 // DeserializerConfig contains configuration for the Avro deserializer

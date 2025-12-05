@@ -53,6 +53,11 @@ services:
       # Allow larger messages for performance testing (2MB)
       KAFKA_MESSAGE_MAX_BYTES: 2097152
       KAFKA_REPLICA_FETCH_MAX_BYTES: 2097152
+      # Tuning for fast consumer group rebalancing in integration tests
+      # Reduce initial rebalance delay for faster consumer group joins (default is 3s)
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 100
+      # Create offsets topic with 1 partition for faster initialization
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9094 || exit 1"]
       interval: 10s

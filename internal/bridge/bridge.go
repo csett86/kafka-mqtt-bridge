@@ -122,11 +122,11 @@ func New(cfg *config.Config, logger *zap.Logger) (*Bridge, error) {
 // initializeAvro initializes the Avro serializer and deserializer based on bridge config
 func (b *Bridge) initializeAvro(ctx context.Context) error {
 	cfg := b.config.SchemaRegistry
-	
+
 	// Check if any Avro config is specified
 	mqttToKafkaAvro := b.config.Bridge.MQTTToKafka != nil && b.config.Bridge.MQTTToKafka.Avro != nil
 	kafkaToMQTTAvro := b.config.Bridge.KafkaToMQTT != nil && b.config.Bridge.KafkaToMQTT.Avro != nil
-	
+
 	if !mqttToKafkaAvro && !kafkaToMQTTAvro {
 		return nil // No Avro config, skip initialization
 	}
