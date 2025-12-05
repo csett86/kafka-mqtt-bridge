@@ -23,7 +23,7 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers bid
 
 ## Known Limitations
 
-- **Kafka topics must exist before starting the bridge**: When bridging from Kafka to MQTT, the source Kafka topic must exist before the bridge is started. If the topic does not exist, the Kafka→MQTT bridge will fail silently (no messages will be bridged and no error will be reported). Note that this limitation does not apply to MQTT→Kafka bridging, where the destination Kafka topic is auto-created if it does not exist.
+- **Kafka topics must exist before starting the bridge**: When bridging from Kafka to MQTT, the source Kafka topic must exist before the bridge is started. If the topic does not exist, the Kafka→MQTT bridge will fail startup with an error. Note that this limitation does not apply to MQTT→Kafka bridging, where the destination Kafka topic is auto-created if it does not exist.
 
 ## Installation
 
