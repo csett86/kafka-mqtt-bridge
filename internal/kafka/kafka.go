@@ -102,6 +102,14 @@ func NewClientWithConfig(cfg ClientConfig, logger *zap.Logger) (*Client, error) 
 		}
 	}
 
+	// Validate topic exists when a read topic is configured
+	if cfg.ReadTopic != "" {
+		if err := validateTopicExists(cfg.Broker, cfg.ReadTopic, dialer); err != nil {
+			return nil, fmt.Errorf("topic validation failed: %w", err)
+		}
+		logger.Info("Topic validated successfully", zap.String("topic", cfg.ReadTopic))
+	}
+
 	var reader *kafka.Reader
 	if cfg.ReadTopic != "" {
 		readerConfig := kafka.ReaderConfig{
@@ -243,6 +251,54 @@ func createSASLMechanism(cfg *SASLConfig) (sasl.Mechanism, error) {
 	default:
 		return nil, fmt.Errorf("unsupported SASL mechanism: %q (supported: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)", cfg.Mechanism)
 	}
+}
+
+// ErrTopicDoesNotExist is returned when a topic does not exist in the Kafka cluster
+var ErrTopicDoesNotExist = errors.New("topic does not exist")
+
+// validateTopicExists checks if a topic exists in the Kafka cluster by attempting to read its partitions.
+//
+// Parameters:
+//   - broker: the Kafka broker address (e.g., "localhost:9092")
+//   - topic: the name of the topic to validate
+//   - dialer: optional custom dialer with SASL/TLS configuration (can be nil for default dialer)
+//
+// Returns:
+//   - nil if the topic exists and has at least one partition
+//   - ErrTopicDoesNotExist (wrapped) if the topic is not found
+//   - another error if the connection or query fails
+func validateTopicExists(broker string, topic string, dialer *kafka.Dialer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var conn *kafka.Conn
+	var err error
+
+	if dialer != nil {
+		conn, err = dialer.DialContext(ctx, "tcp", broker)
+	} else {
+		conn, err = kafka.DialContext(ctx, "tcp", broker)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to connect to broker: %w", err)
+	}
+	defer conn.Close()
+
+	partitions, err := conn.ReadPartitions(topic)
+	if err != nil {
+		// Check if the error indicates the topic doesn't exist
+		var kafkaErr kafka.Error
+		if errors.As(err, &kafkaErr) && kafkaErr == kafka.UnknownTopicOrPartition {
+			return fmt.Errorf("%w: %s", ErrTopicDoesNotExist, topic)
+		}
+		return fmt.Errorf("failed to read partitions for topic %s: %w", topic, err)
+	}
+
+	if len(partitions) == 0 {
+		return fmt.Errorf("%w: %s (no partitions found)", ErrTopicDoesNotExist, topic)
+	}
+
+	return nil
 }
 
 // isTransientError checks if the error is a transient connection error that should be retried.

@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -1032,4 +1033,91 @@ func setupMQTTSubscriberWithQoS(t *testing.T, topic string, qos byte, messages c
 	}
 
 	return client
+}
+
+// TestKafkaReaderFailsForNonExistentTopic tests that the bridge fails with an error
+// when the configured Kafka source topic does not exist.
+func TestKafkaReaderFailsForNonExistentTopic(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Use a topic that definitely doesn't exist
+	testID := time.Now().UnixNano()
+	testIDStr := strconv.FormatInt(testID, 10)
+	nonExistentTopic := "test-nonexistent-topic-" + testIDStr
+	mqttTopic := "mqtt/test/nonexistent/" + testIDStr
+
+	// Build explicit configuration values
+	kafkaGroupID := "test-nonexistent-group-" + testIDStr
+	mqttClientID := "test-nonexistent-" + testIDStr
+	mqttPortStr := strconv.Itoa(mqttPort)
+
+	// Create a temporary config file - topic validation is automatic for readers
+	configContent := `
+kafka:
+  broker: "` + kafkaBrokers + `"
+  group_id: "` + kafkaGroupID + `"
+
+mqtt:
+  broker: "` + mqttBroker + `"
+  port: ` + mqttPortStr + `
+  client_id: "` + mqttClientID + `"
+
+bridge:
+  name: "test-nonexistent-topic"
+  log_level: "debug"
+  buffer_size: 100
+  kafka_to_mqtt:
+    source_topic: "` + nonExistentTopic + `"
+    dest_topic: "` + mqttTopic + `"
+`
+
+	// Create temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	t.Logf("Created config file at: %s", configPath)
+
+	// Build the bridge binary
+	binaryPath := filepath.Join(tmpDir, "kafka-mqtt-bridge")
+	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/bridge")
+	buildCmd.Dir = getProjectRoot()
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build bridge binary: %v\nOutput: %s", err, output)
+	}
+
+	t.Logf("Built bridge binary at: %s", binaryPath)
+
+	// Run the bridge binary - it should fail quickly because the topic doesn't exist
+	bridgeCmd := exec.CommandContext(ctx, binaryPath, "-config", configPath)
+	bridgeCmd.Dir = tmpDir
+	output, err := bridgeCmd.CombinedOutput()
+
+	// The bridge should fail with a non-zero exit code
+	if err == nil {
+		t.Fatalf("Expected bridge to fail for non-existent topic, but it succeeded. Output: %s", output)
+	}
+
+	// Verify the error message mentions topic validation or topic not found
+	outputStr := string(output)
+	if !containsAny(outputStr, "topic validation failed", "topic does not exist", "UnknownTopicOrPartition") {
+		t.Errorf("Expected error message to mention topic validation failure, got: %s", outputStr)
+	}
+
+	t.Logf("Bridge correctly failed with error: %v", err)
+	t.Logf("Output: %s", outputStr)
+	t.Log("Successfully verified that bridge fails when Kafka source topic does not exist")
+}
+
+// containsAny checks if s contains any of the substrings
+func containsAny(s string, substrings ...string) bool {
+	for _, substr := range substrings {
+		if strings.Contains(s, substr) {
+			return true
+		}
+	}
+	return false
 }
