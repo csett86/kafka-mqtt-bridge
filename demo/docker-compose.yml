@@ -14,7 +14,7 @@
 # - mqtt-subscriber: Listens to "master_data" MQTT topic
 #
 # Usage:
-#   docker compose up --build
+#   docker compose up
 #
 # To see the demo in action, observe the logs:
 #   - mqtt-publisher sends to MQTT "transactions"
@@ -68,9 +68,7 @@ services:
 
   # Kafka-MQTT Bridge
   bridge:
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    image: ghcr.io/csett86/kafka-mqtt-bridge:latest
     depends_on:
       mosquitto:
         condition: service_healthy
