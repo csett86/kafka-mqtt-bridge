@@ -32,6 +32,13 @@ A Go application that bridges messages between Apache Kafka and MQTT brokers bid
 Download the prebuilt binaries from the latest release:
 https://github.com/csett86/kafka-mqtt-bridge/releases/latest
 
+### Docker container
+
+Published on Github Container Registry:
+```
+docker pull ghcr.io/csett86/kafka-mqtt-bridge:latest
+```
+
 ### Build from source
 
 1. Clone the Repository
@@ -248,7 +255,7 @@ docker run -e BRIDGE_KAFKA_BROKER=kafka:9092 \
            -e BRIDGE_MQTT_BROKER=mqtt \
            -e BRIDGE_BRIDGE_MQTT_TO_KAFKA_SOURCE_TOPIC=mqtt/events \
            -e BRIDGE_BRIDGE_MQTT_TO_KAFKA_DEST_TOPIC=kafka-events \
-           kafka-mqtt-bridge:latest
+           ghcr.io/csett86/kafka-mqtt-bridge:latest
 ```
 
 ### Running Locally
