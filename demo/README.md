@@ -13,7 +13,7 @@ MQTT Subscriber (master_data) <- Mosquitto <- Kafka-MQTT Bridge <- Kafka Broker 
 ## Message Flow
 
 1. **MQTT → Kafka (transactions)**
-   - `mqtt-publisher` publishes JSON messages to MQTT topic `transactions` every 5 seconds
+   - `mqtt-publisher` publishes JSON messages to MQTT topic `transactions` every second
    - The `bridge` subscribes to MQTT `transactions` and forwards messages to Kafka `transactions`
    - `kafka-subscriber` consumes and displays messages from Kafka `transactions`
 
@@ -29,7 +29,7 @@ MQTT Subscriber (master_data) <- Mosquitto <- Kafka-MQTT Bridge <- Kafka Broker 
 | `mosquitto` | Eclipse Mosquitto MQTT broker |
 | `kafka` | Apache Kafka message broker (KRaft mode) |
 | `bridge` | Kafka-MQTT Bridge service (built from source) |
-| `mqtt-publisher` | Publishes to MQTT "transactions" every 5 seconds |
+| `mqtt-publisher` | Publishes to MQTT "transactions" every second |
 | `kafka-subscriber` | Listens to Kafka "transactions" topic |
 | `kafka-publisher` | Publishes to Kafka "master_data" every 10 seconds |
 | `mqtt-subscriber` | Listens to MQTT "master_data" topic |
