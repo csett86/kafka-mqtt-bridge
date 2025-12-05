@@ -28,7 +28,7 @@ MQTT Subscriber (master_data) <- Mosquitto <- Kafka-MQTT Bridge <- Kafka Broker 
 |---------|-------------|
 | `mosquitto` | Eclipse Mosquitto MQTT broker |
 | `kafka` | Apache Kafka message broker (KRaft mode) |
-| `bridge` | Kafka-MQTT Bridge service (built from source) |
+| `bridge` | Kafka-MQTT Bridge service (from ghcr.io/csett86/kafka-mqtt-bridge:latest) |
 | `mqtt-publisher` | Publishes to MQTT "transactions" every second |
 | `kafka-subscriber` | Listens to Kafka "transactions" topic |
 | `kafka-publisher` | Publishes to Kafka "master_data" every 10 seconds |
@@ -40,7 +40,7 @@ MQTT Subscriber (master_data) <- Mosquitto <- Kafka-MQTT Bridge <- Kafka Broker 
 
 ```bash
 cd demo
-docker compose up --build
+docker compose up
 ```
 
 ### View Logs
