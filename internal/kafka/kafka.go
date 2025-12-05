@@ -258,7 +258,16 @@ func createSASLMechanism(cfg *SASLConfig) (sasl.Mechanism, error) {
 var ErrTopicDoesNotExist = errors.New("topic does not exist")
 
 // validateTopicExists checks if a topic exists in the Kafka cluster by attempting to read its partitions.
-// Returns ErrTopicDoesNotExist if the topic is not found, or another error if the check fails.
+//
+// Parameters:
+//   - broker: the Kafka broker address (e.g., "localhost:9092")
+//   - topic: the name of the topic to validate
+//   - dialer: optional custom dialer with SASL/TLS configuration (can be nil for default dialer)
+//
+// Returns:
+//   - nil if the topic exists and has at least one partition
+//   - ErrTopicDoesNotExist (wrapped) if the topic is not found
+//   - another error if the connection or query fails
 func validateTopicExists(broker string, topic string, dialer *kafka.Dialer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

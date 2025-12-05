@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -1115,13 +1116,8 @@ bridge:
 // containsAny checks if s contains any of the substrings
 func containsAny(s string, substrings ...string) bool {
 	for _, substr := range substrings {
-		if len(substr) > 0 && len(s) > 0 {
-			// Simple substring search
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
+		if strings.Contains(s, substr) {
+			return true
 		}
 	}
 	return false
