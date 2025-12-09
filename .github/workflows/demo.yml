@@ -19,7 +19,7 @@ jobs:
         docker compose up -d --wait --wait-timeout 120
         echo "Demo environment started successfully"
 
-    - name: Run demo and display logs (5 minutes)
+    - name: Run demo and display logs (3 minutes)
       run: |
         cd demo
         
@@ -34,8 +34,8 @@ jobs:
         docker compose logs -f mqtt-subscriber mqtt-subscriber2 mqtt-subscriber3 kafka-subscriber mqtt-publisher mqtt-publisher2 mqtt-publisher3 kafka-publisher &
         LOGS_PID=$!
         
-        # Wait for 5 minutes
-        sleep 300
+        # Wait for 3 minutes
+        sleep 180
 
     - name: Stop demo environment
       if: always()
