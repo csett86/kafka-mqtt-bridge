@@ -6,7 +6,7 @@ kafka:
 # MQTT Configuration
 mqtt:
   broker: "mosquitto2"
-  port: 1883
+  port: 1884
   username: ""
   password: ""
   client_id: "kafka-mqtt-bridge-demo-2"

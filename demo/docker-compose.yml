@@ -42,11 +42,11 @@ services:
   mosquitto2:
     image: eclipse-mosquitto:2.0
     ports:
-      - "1884:1883"
+      - "1884:1884"
     volumes:
       - ./mosquitto2.conf:/mosquitto/config/mosquitto.conf:ro
     healthcheck:
-      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "1883", "-t", "$$SYS/#", "-E", "-i", "healthcheck"]
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "1884", "-t", "$$SYS/#", "-E", "-i", "healthcheck"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -55,11 +55,11 @@ services:
   mosquitto3:
     image: eclipse-mosquitto:2.0
     ports:
-      - "1885:1883"
+      - "1885:1885"
     volumes:
       - ./mosquitto3.conf:/mosquitto/config/mosquitto.conf:ro
     healthcheck:
-      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "1883", "-t", "$$SYS/#", "-E", "-i", "healthcheck"]
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "1885", "-t", "$$SYS/#", "-E", "-i", "healthcheck"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -105,7 +105,7 @@ services:
       kafka-publisher:
         condition: service_started
     volumes:
-      - ./config/bridge-config.yaml:/config/config.yaml:ro
+      - ./config/bridge-config.yaml:/config/bridge-config.yaml:ro
     restart: unless-stopped
 
   # Kafka-MQTT Bridge 2
@@ -119,7 +119,7 @@ services:
       kafka-publisher:
         condition: service_started
     volumes:
-      - ./config/bridge-config2.yaml:/config/config.yaml:ro
+      - ./config/bridge-config2.yaml:/config/bridge-config.yaml:ro
     restart: unless-stopped
 
   # Kafka-MQTT Bridge 3
@@ -133,7 +133,7 @@ services:
       kafka-publisher:
         condition: service_started
     volumes:
-      - ./config/bridge-config3.yaml:/config/config.yaml:ro
+      - ./config/bridge-config3.yaml:/config/bridge-config.yaml:ro
     restart: unless-stopped
 
   # MQTT Publisher - publishes to "transactions" topic every second
@@ -150,7 +150,7 @@ services:
         i=1
         while true; do
           timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          message="{\"id\": $$i, \"type\": \"transaction\", \"amount\": $$((RANDOM % 1000)), \"timestamp\": \"$$timestamp\"}"
+          message="{\"id\": \"s1-$$i\", \"type\": \"transaction\", \"amount\": $$((RANDOM % 1000)), \"timestamp\": \"$$timestamp\"}"
           mosquitto_pub -h mosquitto -p 1883 -t transactions -m "$$message"
           echo "[MQTT->Kafka] Published to mosquitto 'transactions': $$message"
           i=$$((i + 1))
@@ -171,8 +171,8 @@ services:
         i=1
         while true; do
           timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          message="{\"id\": $$i, \"type\": \"transaction\", \"amount\": $$((RANDOM % 1000)), \"timestamp\": \"$$timestamp\"}"
-          mosquitto_pub -h mosquitto2 -p 1883 -t transactions -m "$$message"
+          message="{\"id\": \"s2-$$i\", \"type\": \"transaction\", \"amount\": $$((RANDOM % 1000)), \"timestamp\": \"$$timestamp\"}"
+          mosquitto_pub -h mosquitto2 -p 1884 -t transactions -m "$$message"
           echo "[MQTT->Kafka] Published to mosquitto2 'transactions': $$message"
           i=$$((i + 1))
           sleep 1
@@ -192,8 +192,8 @@ services:
         i=1
         while true; do
           timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          message="{\"id\": $$i, \"type\": \"transaction\", \"amount\": $$((RANDOM % 1000)), \"timestamp\": \"$$timestamp\"}"
-          mosquitto_pub -h mosquitto3 -p 1883 -t transactions -m "$$message"
+          message="{\"id\": \"s3-$$i\", \"type\": \"transaction\", \"amount\": $$((RANDOM % 1000)), \"timestamp\": \"$$timestamp\"}"
+          mosquitto_pub -h mosquitto3 -p 1885 -t transactions -m "$$message"
           echo "[MQTT->Kafka] Published to mosquitto3 'transactions': $$message"
           i=$$((i + 1))
           sleep 1
@@ -212,7 +212,6 @@ services:
       - -c
       - |
         echo "Starting Kafka subscriber on topic 'transactions'..."
-        sleep 10
         /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic transactions --from-beginning | while read line; do
           echo "[MQTT->Kafka] Received from Kafka 'transactions': $$line"
         done
@@ -229,6 +228,7 @@ services:
       - |
         echo "Starting Kafka publisher on topic 'master_data'..."
         i=1
+        sleep 10
         while true; do
           timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           message="{\"id\": $$i, \"type\": \"master_data\", \"name\": \"Product-$$i\", \"timestamp\": \"$$timestamp\"}"
@@ -270,7 +270,7 @@ services:
       - |
         echo "Starting MQTT subscriber 2 on topic 'master_data'..."
         sleep 5
-        mosquitto_sub -h mosquitto2 -p 1883 -t master_data -v | while read line; do
+        mosquitto_sub -h mosquitto2 -p 1884 -t master_data -v | while read line; do
           echo "[Kafka->MQTT] Received from mosquitto2: $$line"
         done
 
@@ -288,6 +288,6 @@ services:
       - |
         echo "Starting MQTT subscriber 3 on topic 'master_data'..."
         sleep 5
-        mosquitto_sub -h mosquitto3 -p 1883 -t master_data -v | while read line; do
+        mosquitto_sub -h mosquitto3 -p 1885 -t master_data -v | while read line; do
           echo "[Kafka->MQTT] Received from mosquitto3: $$line"
         done
