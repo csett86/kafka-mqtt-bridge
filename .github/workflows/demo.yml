@@ -1,7 +1,7 @@
 name: Demo Environment
 
 on:
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,8 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v6
+    - uses: actions/checkout@v6
 
     - name: Start demo environment
       run: |
@@ -23,9 +22,6 @@ jobs:
     - name: Run demo and display logs (5 minutes)
       run: |
         cd demo
-        echo "========================================="
-        echo "Starting 5-minute demo run with live logs"
-        echo "========================================="
         
         # Set up cleanup trap
         cleanup() {
@@ -35,22 +31,14 @@ jobs:
         trap cleanup EXIT
         
         # Run docker compose logs in background to follow all services
-        docker compose logs -f &
+        docker compose logs -f mqtt-subscriber mqtt-subscriber2 mqtt-subscriber3 kafka-subscriber mqtt-publisher mqtt-publisher2 mqtt-publisher3 kafka-publisher &
         LOGS_PID=$!
-        
-        # Give logs a moment to start
-        sleep 2
         
         # Wait for 5 minutes
         sleep 300
-        
-        echo "========================================="
-        echo "Demo run complete"
-        echo "========================================="
 
     - name: Stop demo environment
       if: always()
       run: |
         cd demo
         docker compose down -v
-        echo "Demo environment stopped"
