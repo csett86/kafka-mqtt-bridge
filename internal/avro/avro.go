@@ -47,14 +47,30 @@ func NewSerializer(ctx context.Context, cfg SerializerConfig, logger *zap.Logger
 		return nil, fmt.Errorf("SchemaName is required")
 	}
 
+	// Fetch the schema during initialization
+	schema, err := cfg.SchemaRegistryClient.GetLatestSchema(ctx, cfg.SchemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema: %w", err)
+	}
+
+	// Parse the Avro schema
+	avroSchema, err := avro.Parse(schema.Content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Avro schema: %w", err)
+	}
+
 	s := &Serializer{
 		client:     cfg.SchemaRegistryClient,
 		schemaName: cfg.SchemaName,
+		schema:     schema,
+		avroSchema: avroSchema,
 		logger:     logger,
 	}
 
 	logger.Info("Avro serializer created",
 		zap.String("schemaName", cfg.SchemaName),
+		zap.String("schemaID", schema.ID),
+		zap.Int("version", schema.Version),
 	)
 
 	return s, nil
@@ -68,27 +84,6 @@ func (s *Serializer) Serialize(ctx context.Context, data interface{}) ([]byte, e
 	schema := s.schema
 	avroSchema := s.avroSchema
 	s.mu.RUnlock()
-
-	// If no schema is set, fetch it
-	if schema == nil || avroSchema == nil {
-		s.mu.Lock()
-		if s.schema == nil {
-			var err error
-			s.schema, err = s.client.GetLatestSchema(ctx, s.schemaName)
-			if err != nil {
-				s.mu.Unlock()
-				return nil, fmt.Errorf("failed to get schema: %w", err)
-			}
-			s.avroSchema, err = avro.Parse(s.schema.Content)
-			if err != nil {
-				s.mu.Unlock()
-				return nil, fmt.Errorf("failed to parse Avro schema: %w", err)
-			}
-		}
-		schema = s.schema
-		avroSchema = s.avroSchema
-		s.mu.Unlock()
-	}
 
 	// Encode data to Avro binary
 	avroBytes, err := avro.Marshal(avroSchema, data)
@@ -123,27 +118,6 @@ func (s *Serializer) SerializeJSON(ctx context.Context, jsonData []byte) ([]byte
 	schema := s.schema
 	avroSchema := s.avroSchema
 	s.mu.RUnlock()
-
-	// If no schema is set, fetch it
-	if schema == nil || avroSchema == nil {
-		s.mu.Lock()
-		if s.schema == nil {
-			var err error
-			s.schema, err = s.client.GetLatestSchema(ctx, s.schemaName)
-			if err != nil {
-				s.mu.Unlock()
-				return nil, fmt.Errorf("failed to get schema: %w", err)
-			}
-			s.avroSchema, err = avro.Parse(s.schema.Content)
-			if err != nil {
-				s.mu.Unlock()
-				return nil, fmt.Errorf("failed to parse Avro schema: %w", err)
-			}
-		}
-		schema = s.schema
-		avroSchema = s.avroSchema
-		s.mu.Unlock()
-	}
 
 	// Parse JSON to a generic map
 	var data interface{}
