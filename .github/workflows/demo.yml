@@ -27,15 +27,19 @@ jobs:
         echo "Starting 5-minute demo run with live logs"
         echo "========================================="
         
+        # Set up cleanup trap
+        cleanup() {
+          echo "Stopping log streaming..."
+          kill $LOGS_PID 2>/dev/null || true
+        }
+        trap cleanup EXIT
+        
         # Run docker compose logs in background to follow all services
         docker compose logs -f &
         LOGS_PID=$!
         
         # Wait for 5 minutes
         sleep 300
-        
-        # Stop following logs
-        kill $LOGS_PID 2>/dev/null || true
         
         echo "========================================="
         echo "Demo run complete"
