@@ -50,13 +50,13 @@ func NewSerializer(ctx context.Context, cfg SerializerConfig, logger *zap.Logger
 	// Fetch the schema during initialization
 	schema, err := cfg.SchemaRegistryClient.GetLatestSchema(ctx, cfg.SchemaName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get schema: %w", err)
+		return nil, fmt.Errorf("failed to get schema %q: %w", cfg.SchemaName, err)
 	}
 
 	// Parse the Avro schema
 	avroSchema, err := avro.Parse(schema.Content)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse Avro schema: %w", err)
+		return nil, fmt.Errorf("failed to parse Avro schema %q: %w", cfg.SchemaName, err)
 	}
 
 	s := &Serializer{
