@@ -8,21 +8,21 @@
 # - mosquitto, mosquitto2, mosquitto3: Three MQTT brokers
 # - kafka: Apache Kafka in KRaft mode (no Zookeeper required)
 # - bridge, bridge2, bridge3: Three kafka-mqtt-bridge services (one per mosquitto)
-# - mqtt-publisher: Publishes to "transactions" MQTT topic every 5 seconds
+# - mqtt-publisher, mqtt-publisher2, mqtt-publisher3: Publish to "transactions" on each mosquitto
 # - kafka-subscriber: Listens to "transactions" Kafka topic
 # - kafka-publisher: Publishes to "master_data" Kafka topic every 10 seconds
-# - mqtt-subscriber: Listens to "master_data" MQTT topic
+# - mqtt-subscriber, mqtt-subscriber2, mqtt-subscriber3: Listen to "master_data" on each mosquitto
 #
 # Usage:
 #   docker compose up
 #
 # To see the demo in action, observe the logs:
-#   - mqtt-publisher sends to MQTT "transactions" on mosquitto
+#   - mqtt-publisher* send to MQTT "transactions" on their respective mosquitto brokers
 #   - All three bridges consume from their respective mosquitto and produce to Kafka
 #   - kafka-subscriber receives from Kafka "transactions"
 #   - kafka-publisher sends to Kafka "master_data"
 #   - All three bridges consume from Kafka and produce to their respective mosquitto
-#   - mqtt-subscriber receives from MQTT "master_data" on mosquitto
+#   - mqtt-subscriber* receive from MQTT "master_data" on their respective mosquitto brokers
 
 services:
   # MQTT Broker
@@ -152,7 +152,49 @@ services:
           timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           message="{\"id\": $$i, \"type\": \"transaction\", \"amount\": $$((RANDOM % 1000)), \"timestamp\": \"$$timestamp\"}"
           mosquitto_pub -h mosquitto -p 1883 -t transactions -m "$$message"
-          echo "[MQTT->Kafka] Published to 'transactions': $$message"
+          echo "[MQTT->Kafka] Published to mosquitto 'transactions': $$message"
+          i=$$((i + 1))
+          sleep 1
+        done
+
+  # MQTT Publisher 2 - publishes to "transactions" topic on mosquitto2 every second
+  mqtt-publisher2:
+    image: eclipse-mosquitto:2.0
+    depends_on:
+      mosquitto2:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Starting MQTT publisher 2 on topic 'transactions'..."
+        i=1
+        while true; do
+          timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          message="{\"id\": $$i, \"type\": \"transaction\", \"amount\": $$((RANDOM % 1000)), \"timestamp\": \"$$timestamp\"}"
+          mosquitto_pub -h mosquitto2 -p 1883 -t transactions -m "$$message"
+          echo "[MQTT->Kafka] Published to mosquitto2 'transactions': $$message"
+          i=$$((i + 1))
+          sleep 1
+        done
+
+  # MQTT Publisher 3 - publishes to "transactions" topic on mosquitto3 every second
+  mqtt-publisher3:
+    image: eclipse-mosquitto:2.0
+    depends_on:
+      mosquitto3:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Starting MQTT publisher 3 on topic 'transactions'..."
+        i=1
+        while true; do
+          timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          message="{\"id\": $$i, \"type\": \"transaction\", \"amount\": $$((RANDOM % 1000)), \"timestamp\": \"$$timestamp\"}"
+          mosquitto_pub -h mosquitto3 -p 1883 -t transactions -m "$$message"
+          echo "[MQTT->Kafka] Published to mosquitto3 'transactions': $$message"
           i=$$((i + 1))
           sleep 1
         done
@@ -211,5 +253,41 @@ services:
         echo "Starting MQTT subscriber on topic 'master_data'..."
         sleep 5
         mosquitto_sub -h mosquitto -p 1883 -t master_data -v | while read line; do
-          echo "[Kafka->MQTT] Received from MQTT: $$line"
+          echo "[Kafka->MQTT] Received from mosquitto: $$line"
+        done
+
+  # MQTT Subscriber 2 - listens to "master_data" topic on mosquitto2
+  mqtt-subscriber2:
+    image: eclipse-mosquitto:2.0
+    depends_on:
+      mosquitto2:
+        condition: service_healthy
+      bridge2:
+        condition: service_started
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Starting MQTT subscriber 2 on topic 'master_data'..."
+        sleep 5
+        mosquitto_sub -h mosquitto2 -p 1883 -t master_data -v | while read line; do
+          echo "[Kafka->MQTT] Received from mosquitto2: $$line"
+        done
+
+  # MQTT Subscriber 3 - listens to "master_data" topic on mosquitto3
+  mqtt-subscriber3:
+    image: eclipse-mosquitto:2.0
+    depends_on:
+      mosquitto3:
+        condition: service_healthy
+      bridge3:
+        condition: service_started
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Starting MQTT subscriber 3 on topic 'master_data'..."
+        sleep 5
+        mosquitto_sub -h mosquitto3 -p 1883 -t master_data -v | while read line; do
+          echo "[Kafka->MQTT] Received from mosquitto3: $$line"
         done
