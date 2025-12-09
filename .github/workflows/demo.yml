@@ -2,9 +2,6 @@ name: Demo Environment
 
 on:
   workflow_dispatch:  # Allow manual trigger
-  schedule:
-    # Run weekly on Monday at 00:00 UTC
-    - cron: '0 0 * * 1'
 
 permissions:
   contents: read
@@ -23,52 +20,26 @@ jobs:
         docker compose up -d --wait --wait-timeout 120
         echo "Demo environment started successfully"
 
-    - name: Wait for demo to run (5 minutes)
+    - name: Run demo and display logs (5 minutes)
       run: |
-        echo "Waiting for 5 minutes while demo runs..."
+        cd demo
+        echo "========================================="
+        echo "Starting 5-minute demo run with live logs"
+        echo "========================================="
+        
+        # Run docker compose logs in background to follow all services
+        docker compose logs -f &
+        LOGS_PID=$!
+        
+        # Wait for 5 minutes
         sleep 300
+        
+        # Stop following logs
+        kill $LOGS_PID 2>/dev/null || true
+        
+        echo "========================================="
         echo "Demo run complete"
-
-    - name: Collect logs from MQTT publishers
-      if: always()
-      run: |
-        cd demo
-        mkdir -p ../demo-logs
-        docker compose logs mqtt-publisher > ../demo-logs/mqtt-publisher.log
-        docker compose logs mqtt-publisher2 > ../demo-logs/mqtt-publisher2.log
-        docker compose logs mqtt-publisher3 > ../demo-logs/mqtt-publisher3.log
-        echo "MQTT publisher logs collected"
-
-    - name: Collect logs from MQTT subscribers
-      if: always()
-      run: |
-        cd demo
-        docker compose logs mqtt-subscriber > ../demo-logs/mqtt-subscriber.log
-        docker compose logs mqtt-subscriber2 > ../demo-logs/mqtt-subscriber2.log
-        docker compose logs mqtt-subscriber3 > ../demo-logs/mqtt-subscriber3.log
-        echo "MQTT subscriber logs collected"
-
-    - name: Collect logs from Kafka publisher
-      if: always()
-      run: |
-        cd demo
-        docker compose logs kafka-publisher > ../demo-logs/kafka-publisher.log
-        echo "Kafka publisher logs collected"
-
-    - name: Collect logs from Kafka subscriber
-      if: always()
-      run: |
-        cd demo
-        docker compose logs kafka-subscriber > ../demo-logs/kafka-subscriber.log
-        echo "Kafka subscriber logs collected"
-
-    - name: Upload demo logs
-      if: always()
-      uses: actions/upload-artifact@v5
-      with:
-        name: demo-logs
-        path: demo-logs/
-        retention-days: 30
+        echo "========================================="
 
     - name: Stop demo environment
       if: always()
