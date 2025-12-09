@@ -154,9 +154,6 @@ func (s *Serializer) SerializeJSON(ctx context.Context, jsonData []byte) ([]byte
 func (s *Serializer) GetSchemaID() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.schema == nil {
-		return ""
-	}
 	return s.schema.ID
 }
 
