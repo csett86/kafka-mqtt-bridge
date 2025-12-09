@@ -22,7 +22,6 @@ const (
 
 // Serializer provides Avro serialization with Schema Registry integration
 type Serializer struct {
-	client     *schemaregistry.Client
 	schemaName string
 	schema     *schemaregistry.Schema
 	avroSchema avro.Schema
@@ -60,7 +59,6 @@ func NewSerializer(ctx context.Context, cfg SerializerConfig, logger *zap.Logger
 	}
 
 	s := &Serializer{
-		client:     cfg.SchemaRegistryClient,
 		schemaName: cfg.SchemaName,
 		schema:     schema,
 		avroSchema: avroSchema,
