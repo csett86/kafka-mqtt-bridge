@@ -1,0 +1,31 @@
+# Kafka Configuration
+kafka:
+  broker: "kafka:9092"
+  group_id: "kafka-mqtt-bridge-demo-3"
+
+# MQTT Configuration
+mqtt:
+  broker: "mosquitto3"
+  port: 1883
+  username: ""
+  password: ""
+  client_id: "kafka-mqtt-bridge-demo-3"
+  qos: 1
+
+# Bridge Configuration
+bridge:
+  name: "kafka-mqtt-bridge-demo-3"
+  log_level: "info"
+  buffer_size: 100
+  
+  # MQTT to Kafka bridging configuration
+  # Messages from MQTT "transactions" topic will be forwarded to Kafka "transactions" topic
+  mqtt_to_kafka:
+    source_topic: "transactions"
+    dest_topic: "transactions"
+  
+  # Kafka to MQTT bridging configuration
+  # Messages from Kafka "master_data" topic will be forwarded to MQTT "master_data" topic
+  kafka_to_mqtt:
+    source_topic: "master_data"
+    dest_topic: "master_data"

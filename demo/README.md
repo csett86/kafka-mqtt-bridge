@@ -1,38 +1,48 @@
 # Kafka-MQTT Bridge Demo
 
-This demo showcases the bidirectional message bridging capabilities of the Kafka-MQTT Bridge.
+This demo showcases the bidirectional message bridging capabilities of the Kafka-MQTT Bridge with multiple MQTT brokers and bridge instances working in parallel.
 
 ## Architecture
 
 ```
-MQTT Publisher (transactions) -> Mosquitto -> Kafka-MQTT Bridge -> Kafka Broker -> Kafka Subscriber (transactions)
+MQTT Publisher (transactions) -> Mosquitto  -> Bridge  -> Kafka Broker -> Kafka Subscriber (transactions)
+                                  Mosquitto2 -> Bridge2 /
+                                  Mosquitto3 -> Bridge3 /
 
-MQTT Subscriber (master_data) <- Mosquitto <- Kafka-MQTT Bridge <- Kafka Broker <- Kafka Publisher (master_data)
+MQTT Subscriber (master_data) <- Mosquitto  <- Bridge  <- Kafka Broker <- Kafka Publisher (master_data)
+                                  Mosquitto2 <- Bridge2 /
+                                  Mosquitto3 <- Bridge3 /
 ```
 
 ## Message Flow
 
 1. **MQTT → Kafka (transactions)**
-   - `mqtt-publisher` publishes JSON messages to MQTT topic `transactions` every second
-   - The `bridge` subscribes to MQTT `transactions` and forwards messages to Kafka `transactions`
+   - `mqtt-publisher` publishes JSON messages to MQTT topic `transactions` on `mosquitto` every second
+   - All three `bridge` instances subscribe to MQTT `transactions` on their respective mosquitto brokers
+   - The bridges forward messages to Kafka `transactions` topic
    - `kafka-subscriber` consumes and displays messages from Kafka `transactions`
 
 2. **Kafka → MQTT (master_data)**
    - `kafka-publisher` publishes JSON messages to Kafka topic `master_data` every 10 seconds
-   - The `bridge` consumes from Kafka `master_data` and publishes to MQTT `master_data`
-   - `mqtt-subscriber` subscribes to and displays messages from MQTT `master_data`
+   - All three `bridge` instances consume from Kafka `master_data` (as different consumer group members)
+   - The bridges publish messages to MQTT `master_data` on their respective mosquitto brokers
+   - `mqtt-subscriber` subscribes to and displays messages from MQTT `master_data` on `mosquitto`
 
 ## Components
 
 | Service | Description |
 |---------|-------------|
-| `mosquitto` | Eclipse Mosquitto MQTT broker |
+| `mosquitto` | Eclipse Mosquitto MQTT broker (port 1883) |
+| `mosquitto2` | Eclipse Mosquitto MQTT broker (port 1884) |
+| `mosquitto3` | Eclipse Mosquitto MQTT broker (port 1885) |
 | `kafka` | Apache Kafka message broker (KRaft mode) |
-| `bridge` | Kafka-MQTT Bridge service (from ghcr.io/csett86/kafka-mqtt-bridge:latest) |
-| `mqtt-publisher` | Publishes to MQTT "transactions" every second |
+| `bridge` | Kafka-MQTT Bridge service connecting mosquitto and Kafka |
+| `bridge2` | Kafka-MQTT Bridge service connecting mosquitto2 and Kafka |
+| `bridge3` | Kafka-MQTT Bridge service connecting mosquitto3 and Kafka |
+| `mqtt-publisher` | Publishes to MQTT "transactions" on mosquitto every second |
 | `kafka-subscriber` | Listens to Kafka "transactions" topic |
 | `kafka-publisher` | Publishes to Kafka "master_data" every 10 seconds |
-| `mqtt-subscriber` | Listens to MQTT "master_data" topic |
+| `mqtt-subscriber` | Listens to MQTT "master_data" topic on mosquitto |
 
 ## Usage
 
@@ -48,7 +58,10 @@ docker compose up
 In separate terminals, you can view specific service logs:
 
 ```bash
-# View bridge logs
+# View all bridge logs
+docker compose logs -f bridge bridge2 bridge3
+
+# View a specific bridge
 docker compose logs -f bridge
 
 # View all publisher/subscriber activity
@@ -75,7 +88,9 @@ docker compose down -v
 
 ## Configuration
 
-The bridge configuration is in `config/bridge-config.yaml`:
+The bridge configurations are in the `config/` directory:
+
+### bridge-config.yaml (Bridge 1)
 
 ```yaml
 kafka:
@@ -100,6 +115,18 @@ bridge:
     source_topic: "master_data"
     dest_topic: "master_data"
 ```
+
+### bridge-config2.yaml (Bridge 2)
+
+Similar configuration but connects to `mosquitto2` with `client_id: "kafka-mqtt-bridge-demo-2"` and `group_id: "kafka-mqtt-bridge-demo-2"`.
+
+### bridge-config3.yaml (Bridge 3)
+
+Similar configuration but connects to `mosquitto3` with `client_id: "kafka-mqtt-bridge-demo-3"` and `group_id: "kafka-mqtt-bridge-demo-3"`.
+
+All three bridges bridge the same topics:
+- MQTT `transactions` → Kafka `transactions`
+- Kafka `master_data` → MQTT `master_data`
 
 ## Customization
 

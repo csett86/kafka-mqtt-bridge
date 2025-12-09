@@ -1,13 +1,13 @@
 # Docker Compose file for Kafka-MQTT Bridge Demo
 # 
-# This demo showcases bidirectional message bridging:
+# This demo showcases bidirectional message bridging with multiple brokers:
 # - MQTT topic "transactions" → Kafka topic "transactions"
 # - Kafka topic "master_data" → MQTT topic "master_data"
 #
 # Components:
-# - mosquitto: MQTT broker
+# - mosquitto, mosquitto2, mosquitto3: Three MQTT brokers
 # - kafka: Apache Kafka in KRaft mode (no Zookeeper required)
-# - bridge: The kafka-mqtt-bridge service
+# - bridge, bridge2, bridge3: Three kafka-mqtt-bridge services (one per mosquitto)
 # - mqtt-publisher: Publishes to "transactions" MQTT topic every 5 seconds
 # - kafka-subscriber: Listens to "transactions" Kafka topic
 # - kafka-publisher: Publishes to "master_data" Kafka topic every 10 seconds
@@ -17,10 +17,12 @@
 #   docker compose up
 #
 # To see the demo in action, observe the logs:
-#   - mqtt-publisher sends to MQTT "transactions"
+#   - mqtt-publisher sends to MQTT "transactions" on mosquitto
+#   - All three bridges consume from their respective mosquitto and produce to Kafka
 #   - kafka-subscriber receives from Kafka "transactions"
 #   - kafka-publisher sends to Kafka "master_data"
-#   - mqtt-subscriber receives from MQTT "master_data"
+#   - All three bridges consume from Kafka and produce to their respective mosquitto
+#   - mqtt-subscriber receives from MQTT "master_data" on mosquitto
 
 services:
   # MQTT Broker
@@ -30,6 +32,32 @@ services:
       - "1883:1883"
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "1883", "-t", "$$SYS/#", "-E", "-i", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # MQTT Broker 2
+  mosquitto2:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "1884:1883"
+    volumes:
+      - ./mosquitto2.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "1883", "-t", "$$SYS/#", "-E", "-i", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # MQTT Broker 3
+  mosquitto3:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "1885:1883"
+    volumes:
+      - ./mosquitto3.conf:/mosquitto/config/mosquitto.conf:ro
     healthcheck:
       test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "1883", "-t", "$$SYS/#", "-E", "-i", "healthcheck"]
       interval: 5s
@@ -77,7 +105,35 @@ services:
       kafka-publisher:
         condition: service_started
     volumes:
-      - ./config:/config:ro
+      - ./config/bridge-config.yaml:/config/config.yaml:ro
+    restart: unless-stopped
+
+  # Kafka-MQTT Bridge 2
+  bridge2:
+    image: ghcr.io/csett86/kafka-mqtt-bridge:latest
+    depends_on:
+      mosquitto2:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-publisher:
+        condition: service_started
+    volumes:
+      - ./config/bridge-config2.yaml:/config/config.yaml:ro
+    restart: unless-stopped
+
+  # Kafka-MQTT Bridge 3
+  bridge3:
+    image: ghcr.io/csett86/kafka-mqtt-bridge:latest
+    depends_on:
+      mosquitto3:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-publisher:
+        condition: service_started
+    volumes:
+      - ./config/bridge-config3.yaml:/config/config.yaml:ro
     restart: unless-stopped
 
   # MQTT Publisher - publishes to "transactions" topic every second
