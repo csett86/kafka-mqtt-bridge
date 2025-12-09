@@ -30,13 +30,16 @@ jobs:
         # Set up cleanup trap
         cleanup() {
           echo "Stopping log streaming..."
-          kill $LOGS_PID 2>/dev/null || true
+          kill "$LOGS_PID" 2>/dev/null || true
         }
         trap cleanup EXIT
         
         # Run docker compose logs in background to follow all services
         docker compose logs -f &
         LOGS_PID=$!
+        
+        # Give logs a moment to start
+        sleep 2
         
         # Wait for 5 minutes
         sleep 300
