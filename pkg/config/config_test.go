@@ -63,9 +63,6 @@ schema_registry:
 		t.Errorf("SchemaRegistry.FullyQualifiedNamespace = %q, want %q",
 			cfg.SchemaRegistry.FullyQualifiedNamespace, "test.servicebus.windows.net")
 	}
-	if cfg.SchemaRegistry.CacheEnabled == nil || !*cfg.SchemaRegistry.CacheEnabled {
-		t.Error("SchemaRegistry.CacheEnabled should be true")
-	}
 }
 
 func TestLoadConfigWithAvroDeserializationOnKafkaToMQTT(t *testing.T) {
@@ -141,11 +138,9 @@ bridge:
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
 
-	// Verify schema registry defaults
-	if cfg.SchemaRegistry.CacheEnabled == nil {
-		t.Error("SchemaRegistry.CacheEnabled should have default value")
-	} else if !*cfg.SchemaRegistry.CacheEnabled {
-		t.Error("SchemaRegistry.CacheEnabled should default to true")
+	// Verify config loaded successfully - schema registry fields should be empty when not configured
+	if cfg.SchemaRegistry.FullyQualifiedNamespace != "" {
+		t.Error("SchemaRegistry.FullyQualifiedNamespace should be empty when not configured")
 	}
 }
 
@@ -464,9 +459,6 @@ func TestLoadConfigFromEnvDefaults(t *testing.T) {
 	if cfg.Bridge.LogLevel != "info" {
 		t.Errorf("Bridge.LogLevel = %q, want default %q", cfg.Bridge.LogLevel, "info")
 	}
-	if cfg.SchemaRegistry.CacheEnabled == nil || !*cfg.SchemaRegistry.CacheEnabled {
-		t.Error("SchemaRegistry.CacheEnabled should default to true")
-	}
 }
 
 func TestLoadConfigFromEnvWithTLS(t *testing.T) {
@@ -592,9 +584,6 @@ func TestLoadConfigFromEnvWithSchemaRegistry(t *testing.T) {
 	if cfg.SchemaRegistry.FullyQualifiedNamespace != "test.servicebus.windows.net" {
 		t.Errorf("SchemaRegistry.FullyQualifiedNamespace = %q, want %q",
 			cfg.SchemaRegistry.FullyQualifiedNamespace, "test.servicebus.windows.net")
-	}
-	if cfg.SchemaRegistry.CacheEnabled == nil || *cfg.SchemaRegistry.CacheEnabled {
-		t.Error("SchemaRegistry.CacheEnabled should be false when explicitly set")
 	}
 	if cfg.SchemaRegistry.TenantID != "tenant-123" {
 		t.Errorf("SchemaRegistry.TenantID = %q, want %q", cfg.SchemaRegistry.TenantID, "tenant-123")

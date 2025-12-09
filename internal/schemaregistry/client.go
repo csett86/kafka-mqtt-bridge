@@ -59,8 +59,6 @@ type ClientConfig struct {
 	// Credential is the Azure credential used for authentication
 	// If nil, DefaultAzureCredential will be used
 	Credential azcore.TokenCredential
-	// CacheEnabled enables schema caching (default: true)
-	CacheEnabled bool
 	// RequestTimeout is the timeout for individual API requests (default: 30s)
 	RequestTimeout time.Duration
 }
@@ -75,9 +73,8 @@ type Client struct {
 	requestTimeout time.Duration
 
 	// Schema caching
-	cacheEnabled bool
-	schemaByID   map[string]*Schema
-	cacheMu      sync.RWMutex
+	schemaByID map[string]*Schema
+	cacheMu    sync.RWMutex
 }
 
 // NewClient creates a new Schema Registry client
@@ -110,14 +107,12 @@ func NewClient(cfg ClientConfig, logger *zap.Logger) (*Client, error) {
 		httpClient:     &http.Client{Timeout: timeout},
 		logger:         logger,
 		requestTimeout: timeout,
-		cacheEnabled:   cfg.CacheEnabled,
 		schemaByID:     make(map[string]*Schema),
 	}
 
 	logger.Info("Schema Registry client created",
 		zap.String("namespace", cfg.FullyQualifiedNamespace),
 		zap.String("groupName", cfg.GroupName),
-		zap.Bool("cacheEnabled", cfg.CacheEnabled),
 	)
 
 	return client, nil
@@ -137,15 +132,13 @@ func (c *Client) getAccessToken(ctx context.Context) (string, error) {
 // GetSchemaByID retrieves a schema by its ID
 func (c *Client) GetSchemaByID(ctx context.Context, schemaID string) (*Schema, error) {
 	// Check cache first
-	if c.cacheEnabled {
-		c.cacheMu.RLock()
-		if schema, ok := c.schemaByID[schemaID]; ok {
-			c.cacheMu.RUnlock()
-			c.logger.Debug("Schema found in cache by ID", zap.String("id", schemaID))
-			return schema, nil
-		}
+	c.cacheMu.RLock()
+	if schema, ok := c.schemaByID[schemaID]; ok {
 		c.cacheMu.RUnlock()
+		c.logger.Debug("Schema found in cache by ID", zap.String("id", schemaID))
+		return schema, nil
 	}
+	c.cacheMu.RUnlock()
 
 	// GET /$schemagroups/$schemas/{schemaId}?api-version=2022-10
 	url := fmt.Sprintf("https://%s/$schemagroups/$schemas/%s?api-version=%s",
@@ -208,11 +201,9 @@ func (c *Client) GetSchemaByID(ctx context.Context, schemaID string) (*Schema, e
 	}
 
 	// Cache the schema
-	if c.cacheEnabled {
-		c.cacheMu.Lock()
-		c.schemaByID[schemaID] = schema
-		c.cacheMu.Unlock()
-	}
+	c.cacheMu.Lock()
+	c.schemaByID[schemaID] = schema
+	c.cacheMu.Unlock()
 
 	c.logger.Debug("Schema retrieved",
 		zap.String("id", schemaID),
@@ -269,11 +260,9 @@ func (c *Client) GetSchemaByNameAndVersion(ctx context.Context, schemaName strin
 	}
 
 	// Cache the schema
-	if c.cacheEnabled {
-		c.cacheMu.Lock()
-		c.schemaByID[schemaID] = schema
-		c.cacheMu.Unlock()
-	}
+	c.cacheMu.Lock()
+	c.schemaByID[schemaID] = schema
+	c.cacheMu.Unlock()
 
 	c.logger.Debug("Schema retrieved by name and version",
 		zap.String("schemaName", schemaName),
@@ -337,11 +326,9 @@ func (c *Client) GetLatestSchema(ctx context.Context, schemaName string) (*Schem
 	}
 
 	// Cache the schema
-	if c.cacheEnabled {
-		c.cacheMu.Lock()
-		c.schemaByID[schemaID] = schema
-		c.cacheMu.Unlock()
-	}
+	c.cacheMu.Lock()
+	c.schemaByID[schemaID] = schema
+	c.cacheMu.Unlock()
 
 	c.logger.Debug("Latest schema retrieved",
 		zap.String("schemaName", schemaName),

@@ -95,8 +95,6 @@ type SchemaRegistryConfig struct {
 	// FullyQualifiedNamespace is the fully qualified namespace of the Schema Registry
 	// e.g., "<namespace>.servicebus.windows.net"
 	FullyQualifiedNamespace string `yaml:"fully_qualified_namespace" envconfig:"FULLY_QUALIFIED_NAMESPACE"`
-	// CacheEnabled enables schema caching (default: true)
-	CacheEnabled *bool `yaml:"cache_enabled" envconfig:"CACHE_ENABLED"`
 	// TenantID is the Azure tenant ID for authentication (optional)
 	// If not provided, DefaultAzureCredential will be used
 	TenantID string `yaml:"tenant_id" envconfig:"TENANT_ID"`
@@ -165,12 +163,6 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Bridge.LogLevel == "" {
 		cfg.Bridge.LogLevel = "info"
-	}
-
-	// Set Schema Registry defaults
-	if cfg.SchemaRegistry.CacheEnabled == nil {
-		cacheEnabled := true
-		cfg.SchemaRegistry.CacheEnabled = &cacheEnabled
 	}
 }
 

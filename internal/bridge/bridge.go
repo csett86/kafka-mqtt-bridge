@@ -146,12 +146,6 @@ func (b *Bridge) initializeAvro(ctx context.Context) error {
 		}
 	}
 
-	// Determine cache enabled setting
-	cacheEnabled := true
-	if cfg.CacheEnabled != nil {
-		cacheEnabled = *cfg.CacheEnabled
-	}
-
 	// Create serializer for MQTT→Kafka if Avro is configured
 	if mqttToKafkaAvro {
 		avroCfg := b.config.Bridge.MQTTToKafka.Avro
@@ -159,7 +153,6 @@ func (b *Bridge) initializeAvro(ctx context.Context) error {
 			FullyQualifiedNamespace: cfg.FullyQualifiedNamespace,
 			GroupName:               avroCfg.SchemaGroup,
 			Credential:              cred,
-			CacheEnabled:            cacheEnabled,
 		}, b.logger)
 		if err != nil {
 			return fmt.Errorf("failed to create schema registry client for serialization: %w", err)
@@ -188,7 +181,6 @@ func (b *Bridge) initializeAvro(ctx context.Context) error {
 			FullyQualifiedNamespace: cfg.FullyQualifiedNamespace,
 			GroupName:               avroCfg.SchemaGroup,
 			Credential:              cred,
-			CacheEnabled:            cacheEnabled,
 		}, b.logger)
 		if err != nil {
 			return fmt.Errorf("failed to create schema registry client for deserialization: %w", err)

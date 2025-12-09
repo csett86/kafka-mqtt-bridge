@@ -22,12 +22,10 @@ const (
 
 // Serializer provides Avro serialization with Schema Registry integration
 type Serializer struct {
-	client     *schemaregistry.Client
 	schemaName string
 	schema     *schemaregistry.Schema
 	avroSchema avro.Schema
 	logger     *zap.Logger
-	mu         sync.RWMutex
 }
 
 // SerializerConfig contains configuration for the Avro serializer
@@ -47,14 +45,29 @@ func NewSerializer(ctx context.Context, cfg SerializerConfig, logger *zap.Logger
 		return nil, fmt.Errorf("SchemaName is required")
 	}
 
+	// Fetch the schema during initialization
+	schema, err := cfg.SchemaRegistryClient.GetLatestSchema(ctx, cfg.SchemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema %q: %w", cfg.SchemaName, err)
+	}
+
+	// Parse the Avro schema
+	avroSchema, err := avro.Parse(schema.Content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Avro schema %q: %w", cfg.SchemaName, err)
+	}
+
 	s := &Serializer{
-		client:     cfg.SchemaRegistryClient,
 		schemaName: cfg.SchemaName,
+		schema:     schema,
+		avroSchema: avroSchema,
 		logger:     logger,
 	}
 
 	logger.Info("Avro serializer created",
 		zap.String("schemaName", cfg.SchemaName),
+		zap.String("schemaID", schema.ID),
+		zap.Int("version", schema.Version),
 	)
 
 	return s, nil
@@ -64,41 +77,15 @@ func NewSerializer(ctx context.Context, cfg SerializerConfig, logger *zap.Logger
 // The data should be a map or struct that matches the Avro schema.
 // Returns bytes in format: [format version][schema ID length (4 bytes)][schema ID][Avro payload]
 func (s *Serializer) Serialize(ctx context.Context, data interface{}) ([]byte, error) {
-	s.mu.RLock()
-	schema := s.schema
-	avroSchema := s.avroSchema
-	s.mu.RUnlock()
-
-	// If no schema is set, fetch it
-	if schema == nil || avroSchema == nil {
-		s.mu.Lock()
-		if s.schema == nil {
-			var err error
-			s.schema, err = s.client.GetLatestSchema(ctx, s.schemaName)
-			if err != nil {
-				s.mu.Unlock()
-				return nil, fmt.Errorf("failed to get schema: %w", err)
-			}
-			s.avroSchema, err = avro.Parse(s.schema.Content)
-			if err != nil {
-				s.mu.Unlock()
-				return nil, fmt.Errorf("failed to parse Avro schema: %w", err)
-			}
-		}
-		schema = s.schema
-		avroSchema = s.avroSchema
-		s.mu.Unlock()
-	}
-
 	// Encode data to Avro binary
-	avroBytes, err := avro.Marshal(avroSchema, data)
+	avroBytes, err := avro.Marshal(s.avroSchema, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode data to Avro: %w", err)
 	}
 
 	// Build message with Schema Registry header
 	// Format: [format version (1 byte)][schema ID length (4 bytes big-endian)][schema ID][Avro payload]
-	schemaIDBytes := []byte(schema.ID)
+	schemaIDBytes := []byte(s.schema.ID)
 	schemaIDLen := len(schemaIDBytes)
 
 	result := make([]byte, 1+4+schemaIDLen+len(avroBytes))
@@ -109,7 +96,7 @@ func (s *Serializer) Serialize(ctx context.Context, data interface{}) ([]byte, e
 
 	s.logger.Debug("Message serialized",
 		zap.String("schemaName", s.schemaName),
-		zap.String("schemaID", schema.ID),
+		zap.String("schemaID", s.schema.ID),
 		zap.Int("payloadSize", len(avroBytes)),
 	)
 
@@ -119,32 +106,6 @@ func (s *Serializer) Serialize(ctx context.Context, data interface{}) ([]byte, e
 // SerializeJSON serializes JSON data to Avro binary format with Schema Registry header.
 // The input should be a JSON string or []byte that matches the Avro schema.
 func (s *Serializer) SerializeJSON(ctx context.Context, jsonData []byte) ([]byte, error) {
-	s.mu.RLock()
-	schema := s.schema
-	avroSchema := s.avroSchema
-	s.mu.RUnlock()
-
-	// If no schema is set, fetch it
-	if schema == nil || avroSchema == nil {
-		s.mu.Lock()
-		if s.schema == nil {
-			var err error
-			s.schema, err = s.client.GetLatestSchema(ctx, s.schemaName)
-			if err != nil {
-				s.mu.Unlock()
-				return nil, fmt.Errorf("failed to get schema: %w", err)
-			}
-			s.avroSchema, err = avro.Parse(s.schema.Content)
-			if err != nil {
-				s.mu.Unlock()
-				return nil, fmt.Errorf("failed to parse Avro schema: %w", err)
-			}
-		}
-		schema = s.schema
-		avroSchema = s.avroSchema
-		s.mu.Unlock()
-	}
-
 	// Parse JSON to a generic map
 	var data interface{}
 	if err := json.Unmarshal(jsonData, &data); err != nil {
@@ -152,13 +113,13 @@ func (s *Serializer) SerializeJSON(ctx context.Context, jsonData []byte) ([]byte
 	}
 
 	// Encode to Avro binary
-	avroBytes, err := avro.Marshal(avroSchema, data)
+	avroBytes, err := avro.Marshal(s.avroSchema, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode to Avro: %w", err)
 	}
 
 	// Build message with Schema Registry header
-	schemaIDBytes := []byte(schema.ID)
+	schemaIDBytes := []byte(s.schema.ID)
 	schemaIDLen := len(schemaIDBytes)
 
 	result := make([]byte, 1+4+schemaIDLen+len(avroBytes))
@@ -169,7 +130,7 @@ func (s *Serializer) SerializeJSON(ctx context.Context, jsonData []byte) ([]byte
 
 	s.logger.Debug("JSON message serialized to Avro",
 		zap.String("schemaName", s.schemaName),
-		zap.String("schemaID", schema.ID),
+		zap.String("schemaID", s.schema.ID),
 		zap.Int("payloadSize", len(avroBytes)),
 	)
 
@@ -178,11 +139,6 @@ func (s *Serializer) SerializeJSON(ctx context.Context, jsonData []byte) ([]byte
 
 // GetSchemaID returns the current schema ID
 func (s *Serializer) GetSchemaID() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.schema == nil {
-		return ""
-	}
 	return s.schema.ID
 }
 
