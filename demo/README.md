@@ -1,31 +1,31 @@
 # Kafka-MQTT Bridge Demo
 
-This demo showcases the bidirectional message bridging capabilities of the Kafka-MQTT Bridge with multiple MQTT brokers and bridge instances working in parallel.
+This demo showcases bidirectional message movement between multiple MQTT brokers and Redpanda using Redpanda Connect MQTT source and sink connectors.
 
 ## Architecture
 
 ```
-MQTT Publisher  -> Mosquitto  -> Bridge  -> Kafka Broker -> Kafka Subscriber (transactions)
-MQTT Publisher2 -> Mosquitto2 -> Bridge2 /
-MQTT Publisher3 -> Mosquitto3 -> Bridge3 /
+MQTT Publisher  -> Mosquitto  -> Redpanda Connect (MQTT Source) -> Redpanda -> Kafka Subscriber (transactions)
+MQTT Publisher2 -> Mosquitto2 -> Redpanda Connect (MQTT Source) /
+MQTT Publisher3 -> Mosquitto3 -> Redpanda Connect (MQTT Source) /
 
-MQTT Subscriber  <- Mosquitto  <- Bridge  <- Kafka Broker <- Kafka Publisher (master_data)
-MQTT Subscriber2 <- Mosquitto2 <- Bridge2 /
-MQTT Subscriber3 <- Mosquitto3 <- Bridge3 /
+MQTT Subscriber  <- Mosquitto  <- Redpanda Connect (MQTT Sink) <- Redpanda <- Kafka Publisher (master_data)
+MQTT Subscriber2 <- Mosquitto2 <- Redpanda Connect (MQTT Sink) /
+MQTT Subscriber3 <- Mosquitto3 <- Redpanda Connect (MQTT Sink) /
 ```
 
 ## Message Flow
 
-1. **MQTT → Kafka (transactions)**
+1. **MQTT → Redpanda (transactions)**
    - `mqtt-publisher`, `mqtt-publisher2`, and `mqtt-publisher3` publish JSON messages to MQTT topic `transactions` on their respective mosquitto brokers every second
-   - Each `bridge` instance subscribes to MQTT `transactions` on its respective mosquitto broker
-   - The bridges forward messages to Kafka `transactions` topic
-   - `kafka-subscriber` consumes and displays messages from Kafka `transactions`
+   - Redpanda Connect MQTT source connectors subscribe to `transactions` on each mosquitto broker
+   - The connectors forward messages to Redpanda `transactions` topic
+   - `kafka-subscriber` consumes and displays messages from Redpanda `transactions`
 
 2. **Kafka → MQTT (master_data)**
-   - `kafka-publisher` publishes JSON messages to Kafka topic `master_data` every 10 seconds
-   - All three `bridge` instances consume from Kafka `master_data` (as different consumer group members)
-   - The bridges publish messages to MQTT `master_data` on their respective mosquitto brokers
+   - `kafka-publisher` publishes JSON messages to Redpanda topic `master_data` every 10 seconds
+   - Redpanda Connect MQTT sink connectors consume from Redpanda `master_data`
+   - The connectors publish messages to MQTT `master_data` on their respective mosquitto brokers
    - `mqtt-subscriber`, `mqtt-subscriber2`, and `mqtt-subscriber3` subscribe to and display messages from MQTT `master_data` on their respective mosquitto brokers
 
 ## Components
@@ -35,15 +35,14 @@ MQTT Subscriber3 <- Mosquitto3 <- Bridge3 /
 | `mosquitto` | Eclipse Mosquitto MQTT broker (port 1883) |
 | `mosquitto2` | Eclipse Mosquitto MQTT broker (port 1884) |
 | `mosquitto3` | Eclipse Mosquitto MQTT broker (port 1885) |
-| `kafka` | Apache Kafka message broker (KRaft mode) |
-| `bridge` | Kafka-MQTT Bridge service connecting mosquitto and Kafka |
-| `bridge2` | Kafka-MQTT Bridge service connecting mosquitto2 and Kafka |
-| `bridge3` | Kafka-MQTT Bridge service connecting mosquitto3 and Kafka |
+| `redpanda` | Redpanda broker (Kafka API compatible) |
+| `connect` | Redpanda Connect worker running MQTT source/sink connectors |
+| `configure-connect` | One-shot job that applies MQTT connector configs at startup |
 | `mqtt-publisher` | Publishes to MQTT "transactions" on mosquitto every second |
 | `mqtt-publisher2` | Publishes to MQTT "transactions" on mosquitto2 every second |
 | `mqtt-publisher3` | Publishes to MQTT "transactions" on mosquitto3 every second |
-| `kafka-subscriber` | Listens to Kafka "transactions" topic |
-| `kafka-publisher` | Publishes to Kafka "master_data" every 10 seconds |
+| `kafka-subscriber` | Listens to Redpanda "transactions" topic |
+| `kafka-publisher` | Publishes to Redpanda "master_data" every 10 seconds |
 | `mqtt-subscriber` | Listens to MQTT "master_data" topic on mosquitto |
 | `mqtt-subscriber2` | Listens to MQTT "master_data" topic on mosquitto2 |
 | `mqtt-subscriber3` | Listens to MQTT "master_data" topic on mosquitto3 |
@@ -62,11 +61,8 @@ docker compose up
 In separate terminals, you can view specific service logs:
 
 ```bash
-# View all bridge logs
-docker compose logs -f bridge bridge2 bridge3
-
-# View a specific bridge
-docker compose logs -f bridge
+# View all Connect logs
+docker compose logs -f connect configure-connect
 
 # View all MQTT publishers
 docker compose logs -f mqtt-publisher mqtt-publisher2 mqtt-publisher3
@@ -86,7 +82,7 @@ You should see output like:
 mqtt-publisher-1     | [MQTT->Kafka] Published to mosquitto 'transactions': {"id": 1, "type": "transaction", "amount": 42, "timestamp": "2024-01-15T10:30:00Z"}
 mqtt-publisher2-1    | [MQTT->Kafka] Published to mosquitto2 'transactions': {"id": 1, "type": "transaction", "amount": 123, "timestamp": "2024-01-15T10:30:00Z"}
 mqtt-publisher3-1    | [MQTT->Kafka] Published to mosquitto3 'transactions': {"id": 1, "type": "transaction", "amount": 789, "timestamp": "2024-01-15T10:30:00Z"}
-kafka-subscriber-1   | [MQTT->Kafka] Received from Kafka 'transactions': {"id": 1, "type": "transaction", "amount": 42, "timestamp": "2024-01-15T10:30:00Z"}
+kafka-subscriber-1   | [MQTT->Kafka] Received from Redpanda 'transactions': {"id": 1, "type": "transaction", "amount": 42, "timestamp": "2024-01-15T10:30:00Z"}
 
 kafka-publisher-1    | [Kafka->MQTT] Published to 'master_data': {"id": 1, "type": "master_data", "name": "Product-1", "timestamp": "2024-01-15T10:30:05Z"}
 mqtt-subscriber-1    | [Kafka->MQTT] Received from mosquitto: master_data {"id": 1, "type": "master_data", "name": "Product-1", "timestamp": "2024-01-15T10:30:05Z"}
@@ -102,50 +98,13 @@ docker compose down -v
 
 ## Configuration
 
-The bridge configurations are in the `config/` directory:
+Redpanda Connect loads MQTT connector definitions from `connectors/*.json`:
 
-### bridge-config.yaml (Bridge 1)
+- `transactions-source-*.json`: MQTT source connectors that read `transactions` from each mosquitto broker and write to the Redpanda `transactions` topic.
+- `master-data-sink-*.json`: MQTT sink connectors that read `master_data` from Redpanda and publish to each mosquitto broker.
 
-```yaml
-kafka:
-  broker: "kafka:9092"
-  group_id: "kafka-mqtt-bridge-demo"
+You can customize the demo by:
 
-mqtt:
-  broker: "mosquitto"
-  port: 1883
-  client_id: "kafka-mqtt-bridge-demo"
-  qos: 1
-
-bridge:
-  name: "kafka-mqtt-bridge-demo"
-  log_level: "info"
-  
-  mqtt_to_kafka:
-    source_topic: "transactions"
-    dest_topic: "transactions"
-  
-  kafka_to_mqtt:
-    source_topic: "master_data"
-    dest_topic: "master_data"
-```
-
-### bridge-config2.yaml (Bridge 2)
-
-Similar configuration but connects to `mosquitto2` with `client_id: "kafka-mqtt-bridge-demo-2"` and `group_id: "kafka-mqtt-bridge-demo-2"`.
-
-### bridge-config3.yaml (Bridge 3)
-
-Similar configuration but connects to `mosquitto3` with `client_id: "kafka-mqtt-bridge-demo-3"` and `group_id: "kafka-mqtt-bridge-demo-3"`.
-
-All three bridges bridge the same topics:
-- MQTT `transactions` → Kafka `transactions`
-- Kafka `master_data` → MQTT `master_data`
-
-## Customization
-
-You can modify the demo by:
-
-1. Editing `config/bridge-config.yaml` to change topic mappings
+1. Editing the JSON connector files to change topics, QoS, or target brokers
 2. Adjusting publish intervals in `docker-compose.yml`
 3. Changing message formats in the publisher scripts

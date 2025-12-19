@@ -1,0 +1,15 @@
+{
+  "connector.class": "com.datamountaineer.streamreactor.connect.mqtt.sink.MqttSinkConnector",
+  "tasks.max": "1",
+  "topics": "master_data",
+  "connect.mqtt.kcql": "INSERT INTO master_data SELECT * FROM master_data",
+  "connect.mqtt.hosts": "tcp://mosquitto:1883",
+  "connect.mqtt.service.quality": "1",
+  "connect.mqtt.client.id": "mqtt-sink-1",
+  "connect.mqtt.clean": "true",
+  "connect.mqtt.keep.alive": "1000",
+  "connect.progress.enabled": "true",
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false"
+}
