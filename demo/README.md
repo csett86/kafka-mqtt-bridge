@@ -22,7 +22,7 @@ MQTT Subscriber3 <- Mosquitto3 <- Redpanda Connect (MQTT Sink) /
    - The connectors forward messages to Redpanda `transactions` topic
    - `kafka-subscriber` consumes and displays messages from Redpanda `transactions`
 
-2. **Kafka → MQTT (master_data)**
+2. **Redpanda → MQTT (master_data)**
    - `kafka-publisher` publishes JSON messages to Redpanda topic `master_data` every 10 seconds
    - Redpanda Connect MQTT sink connectors consume from Redpanda `master_data`
    - The connectors publish messages to MQTT `master_data` on their respective mosquitto brokers
