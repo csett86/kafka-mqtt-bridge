@@ -1,0 +1,30 @@
+input:
+  broker:
+    inputs:
+      - mqtt:
+          urls: [ "tcp://mosquitto:1883" ]
+          topics: [ transactions ]
+          client_id: mqtt-source-1
+          qos: 1
+      - mqtt:
+          urls: [ "tcp://mosquitto2:1884" ]
+          topics: [ transactions ]
+          client_id: mqtt-source-2
+          qos: 1
+      - mqtt:
+          urls: [ "tcp://mosquitto3:1885" ]
+          topics: [ transactions ]
+          client_id: mqtt-source-3
+          qos: 1
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+
+output:
+  kafka:
+    seed_brokers: [ "redpanda:9092" ]
+    topic: transactions
+    static_headers:
+      source: mqtt

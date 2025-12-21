@@ -89,58 +89,43 @@ services:
       retries: 10
       start_period: 10s
 
-  # Redpanda Connect worker hosting MQTT connectors
-  connect:
-    image: docker.redpanda.com/redpandadata/connectors:latest
+  # Redpanda Connect pipeline: MQTT -> Redpanda (transactions)
+  connect-source:
+    image: docker.redpanda.com/redpandadata/connect:latest
     depends_on:
       redpanda:
         condition: service_healthy
-    environment:
-      CONNECT_BOOTSTRAP_SERVERS: "redpanda:9092"
-      CONNECT_REST_PORT: 8083
-      CONNECT_GROUP_ID: "connect-cluster"
-      CONNECT_CONFIG_STORAGE_TOPIC: "_redpanda_connect_configs"
-      CONNECT_OFFSET_STORAGE_TOPIC: "_redpanda_connect_offsets"
-      CONNECT_STATUS_STORAGE_TOPIC: "_redpanda_connect_status"
-      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
-      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
-      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
-      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
-      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
-      CONNECT_PLUGIN_PATH: "/opt/kafka/connectors"
-    ports:
-      - "8083:8083"
+      mosquitto:
+        condition: service_healthy
+      mosquitto2:
+        condition: service_healthy
+      mosquitto3:
+        condition: service_healthy
+    command: ["rpk", "connect", "run", "/etc/redpanda/connect-source.yaml"]
+    volumes:
+      - ./connect-source.yaml:/etc/redpanda/connect-source.yaml:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:8083/connectors || exit 1"]
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/readyz || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 10
-      start_period: 20s
+      start_period: 10s
 
-  # Apply MQTT source/sink connector configurations
-  configure-connect:
-    image: curlimages/curl:8.11.1
+  # Redpanda Connect pipeline: Redpanda -> MQTT (master_data)
+  connect-sink:
+    image: docker.redpanda.com/redpandadata/connect:latest
     depends_on:
-      connect:
+      redpanda:
         condition: service_healthy
+    command: ["rpk", "connect", "run", "/etc/redpanda/connect-sink.yaml"]
     volumes:
-      - ./connectors:/connectors:ro
-    entrypoint: /bin/sh
-    command:
-      - -c
-      - |
-        echo "Waiting for Redpanda Connect..."
-        until curl -fs http://connect:8083/connectors; do
-          sleep 2
-        done
-        for cfg in /connectors/*.json; do
-          name=$$(basename $$cfg .json)
-          echo "Applying connector $$name..."
-          curl -fs -X PUT -H "Content-Type: application/json" --data @$$cfg http://connect:8083/connectors/$$name/config || exit 1
-        done
-        echo "Connectors applied"
-    restart: "no"
+      - ./connect-sink.yaml:/etc/redpanda/connect-sink.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/readyz || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
 
   # MQTT Publisher - publishes to "transactions" topic every second
   mqtt-publisher:
@@ -211,8 +196,8 @@ services:
     depends_on:
       redpanda:
         condition: service_healthy
-      configure-connect:
-        condition: service_completed_successfully
+      connect-source:
+        condition: service_healthy
     entrypoint: /bin/sh
     command:
       - -c
@@ -250,8 +235,8 @@ services:
     depends_on:
       mosquitto:
         condition: service_healthy
-      configure-connect:
-        condition: service_completed_successfully
+      connect-sink:
+        condition: service_healthy
     entrypoint: /bin/sh
     command:
       - -c
@@ -268,8 +253,8 @@ services:
     depends_on:
       mosquitto2:
         condition: service_healthy
-      configure-connect:
-        condition: service_completed_successfully
+      connect-sink:
+        condition: service_healthy
     entrypoint: /bin/sh
     command:
       - -c
@@ -286,8 +271,8 @@ services:
     depends_on:
       mosquitto3:
         condition: service_healthy
-      configure-connect:
-        condition: service_completed_successfully
+      connect-sink:
+        condition: service_healthy
     entrypoint: /bin/sh
     command:
       - -c

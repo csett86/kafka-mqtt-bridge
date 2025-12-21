@@ -36,8 +36,8 @@ MQTT Subscriber3 <- Mosquitto3 <- Redpanda Connect (MQTT Sink) /
 | `mosquitto2` | Eclipse Mosquitto MQTT broker (port 1884) |
 | `mosquitto3` | Eclipse Mosquitto MQTT broker (port 1885) |
 | `redpanda` | Redpanda broker (Kafka API compatible) |
-| `connect` | Redpanda Connect worker running MQTT source/sink connectors |
-| `configure-connect` | One-shot job that applies MQTT connector configs at startup |
+| `connect-source` | Redpanda Connect pipeline reading MQTT `transactions` and writing to Redpanda |
+| `connect-sink` | Redpanda Connect pipeline reading Redpanda `master_data` and writing to MQTT |
 | `mqtt-publisher` | Publishes to MQTT "transactions" on mosquitto every second |
 | `mqtt-publisher2` | Publishes to MQTT "transactions" on mosquitto2 every second |
 | `mqtt-publisher3` | Publishes to MQTT "transactions" on mosquitto3 every second |
@@ -62,7 +62,7 @@ In separate terminals, you can view specific service logs:
 
 ```bash
 # View all Connect logs
-docker compose logs -f connect configure-connect
+docker compose logs -f connect-source connect-sink
 
 # View all MQTT publishers
 docker compose logs -f mqtt-publisher mqtt-publisher2 mqtt-publisher3
@@ -98,13 +98,13 @@ docker compose down -v
 
 ## Configuration
 
-Redpanda Connect loads MQTT connector definitions from `connectors/*.json`:
+Redpanda Connect pipeline configs are mounted into the containers:
 
-- `transactions-source-*.json`: MQTT source connectors that read `transactions` from each mosquitto broker and write to the Redpanda `transactions` topic.
-- `master-data-sink-*.json`: MQTT sink connectors that read `master_data` from Redpanda and publish to each mosquitto broker.
+- `connect-source.yaml`: MQTT sources on mosquitto*, output to Redpanda `transactions`
+- `connect-sink.yaml`: Redpanda input on `master_data`, outputs to mosquitto* `master_data`
 
 You can customize the demo by:
 
-1. Editing the JSON connector files to change topics, QoS, or target brokers
+1. Editing the YAML pipeline files to change topics, QoS, or target brokers
 2. Adjusting publish intervals in `docker-compose.yml`
 3. Changing message formats in the publisher scripts
