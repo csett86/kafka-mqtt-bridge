@@ -32,7 +32,7 @@ services:
       - ./test/eventhubs-emulator-config.json:/Eventhubs_Emulator/ConfigFiles/Config.json:ro
 
   kafka:
-    image: docker.redpanda.com/redpandadata/redpanda:v24.2.12
+    image: docker.redpanda.com/redpandadata/redpanda:latest
     hostname: kafka
     command:
       - redpanda
