@@ -1,6 +1,6 @@
 input:
   kafka:
-    seed_brokers: [ "redpanda:9092" ]
+    addresses: [ "redpanda:9092" ]
     topics: [ master_data ]
     consumer_group: master-data-to-mqtt
     start_from_oldest: true

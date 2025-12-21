@@ -24,7 +24,7 @@ pipeline:
 
 output:
   kafka:
-    seed_brokers: [ "redpanda:9092" ]
+    addresses: [ "redpanda:9092" ]
     topic: transactions
     static_headers:
       source: mqtt
