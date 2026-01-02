@@ -8,7 +8,10 @@ updates:
     directory: "/"
     schedule:
       interval: "semiannually"
-    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   # Go module dependencies
   - package-ecosystem: "gomod"
