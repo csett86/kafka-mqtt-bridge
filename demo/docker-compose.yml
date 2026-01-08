@@ -1,16 +1,17 @@
 # Docker Compose file for Kafka-MQTT Bridge Demo
 # 
-# This demo showcases bidirectional message bridging with multiple brokers:
-# - MQTT topic "transactions" → Kafka topic "transactions"
-# - Kafka topic "master_data" → MQTT topic "master_data"
+# This demo now uses Redpanda and Redpanda Connect MQTT connectors to move data between MQTT brokers and Kafka topics:
+# - MQTT topic "transactions" → Redpanda topic "transactions"
+# - Redpanda topic "master_data" → MQTT topic "master_data"
 #
 # Components:
 # - mosquitto, mosquitto2, mosquitto3: Three MQTT brokers
-# - kafka: Apache Kafka in KRaft mode (no Zookeeper required)
-# - bridge, bridge2, bridge3: Three kafka-mqtt-bridge services (one per mosquitto)
+# - redpanda: Kafka-compatible broker
+# - connect: Redpanda Connect worker hosting MQTT connectors
+# - configure-connect: One-shot job to apply MQTT source/sink connector configs
 # - mqtt-publisher, mqtt-publisher2, mqtt-publisher3: Publish to "transactions" on each mosquitto
-# - kafka-subscriber: Listens to "transactions" Kafka topic
-# - kafka-publisher: Publishes to "master_data" Kafka topic every 10 seconds
+# - kafka-subscriber: Listens to "transactions" topic
+# - kafka-publisher: Publishes to "master_data" topic every 10 seconds
 # - mqtt-subscriber, mqtt-subscriber2, mqtt-subscriber3: Listen to "master_data" on each mosquitto
 #
 # Usage:
@@ -18,10 +19,10 @@
 #
 # To see the demo in action, observe the logs:
 #   - mqtt-publisher* send to MQTT "transactions" on their respective mosquitto brokers
-#   - All three bridges consume from their respective mosquitto and produce to Kafka
-#   - kafka-subscriber receives from Kafka "transactions"
-#   - kafka-publisher sends to Kafka "master_data"
-#   - All three bridges consume from Kafka and produce to their respective mosquitto
+#   - MQTT source connectors push to Redpanda "transactions"
+#   - kafka-subscriber receives from Redpanda "transactions"
+#   - kafka-publisher sends to Redpanda "master_data"
+#   - MQTT sink connectors push "master_data" to each mosquitto
 #   - mqtt-subscriber* receive from MQTT "master_data" on their respective mosquitto brokers
 
 services:
@@ -64,77 +65,75 @@ services:
       timeout: 5s
       retries: 5
 
-  # Kafka Broker in KRaft mode (no Zookeeper required)
-  kafka:
-    image: apache/kafka:4.1.1
-    hostname: kafka
+  # Redpanda Broker
+  redpanda:
+    image: redpandadata/redpanda:v24.3.5
+    command:
+      - redpanda
+      - start
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --overprovisioned
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092
     ports:
       - "9092:9092"
-    environment:
-      # KRaft combined mode configuration
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_GROUP_MIN_SESSION_TIMEOUT_MS: 1000
+      - "9644:9644"
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      test: ["CMD-SHELL", "rpk cluster metadata --brokers localhost:9092 >/dev/null 2>&1"]
       interval: 10s
       timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 10s
 
-  # Kafka-MQTT Bridge
-  bridge:
-    image: ghcr.io/csett86/kafka-mqtt-bridge:latest
+  # Redpanda Connect pipeline: MQTT -> Redpanda (transactions)
+  connect-source:
+    image: docker.redpanda.com/redpandadata/connect:latest
     depends_on:
+      redpanda:
+        condition: service_healthy
       mosquitto:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
-      kafka-publisher:
-        condition: service_started
-    volumes:
-      - ./config/bridge-config.yaml:/config/bridge-config.yaml:ro
-    restart: unless-stopped
-
-  # Kafka-MQTT Bridge 2
-  bridge2:
-    image: ghcr.io/csett86/kafka-mqtt-bridge:latest
-    depends_on:
       mosquitto2:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
-      kafka-publisher:
-        condition: service_started
-    volumes:
-      - ./config/bridge-config2.yaml:/config/bridge-config.yaml:ro
-    restart: unless-stopped
-
-  # Kafka-MQTT Bridge 3
-  bridge3:
-    image: ghcr.io/csett86/kafka-mqtt-bridge:latest
-    depends_on:
       mosquitto3:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
-      kafka-publisher:
-        condition: service_started
+    command: ["run", "/etc/redpanda/connect-source.yaml"]
     volumes:
-      - ./config/bridge-config3.yaml:/config/bridge-config.yaml:ro
-    restart: unless-stopped
+      - ./connect-source.yaml:/etc/redpanda/connect-source.yaml:ro
+    ports:
+      - "4195:4195"
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+
+  # Redpanda Connect pipeline: Redpanda -> MQTT (master_data)
+  connect-sink:
+    image: docker.redpanda.com/redpandadata/connect:latest
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    command: ["run", "/etc/redpanda/connect-sink.yaml"]
+    volumes:
+      - ./connect-sink.yaml:/etc/redpanda/connect-sink.yaml:ro
+    ports:
+      - "4196:4195"
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
 
   # MQTT Publisher - publishes to "transactions" topic every second
   mqtt-publisher:
@@ -203,24 +202,24 @@ services:
   kafka-subscriber:
     image: apache/kafka:4.1.1
     depends_on:
-      kafka:
+      redpanda:
         condition: service_healthy
-      bridge:
-        condition: service_started
+      connect-source:
+        condition: service_healthy
     entrypoint: /bin/sh
     command:
       - -c
       - |
         echo "Starting Kafka subscriber on topic 'transactions'..."
-        /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic transactions --from-beginning | while read line; do
-          echo "[MQTT->Kafka] Received from Kafka 'transactions': $$line"
+        /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server redpanda:9092 --topic transactions --from-beginning | while read line; do
+          echo "[MQTT->Kafka] Received from Redpanda 'transactions': $$line"
         done
 
   # Kafka Publisher - publishes to "master_data" topic every 10 seconds
   kafka-publisher:
     image: apache/kafka:4.1.1
     depends_on:
-      kafka:
+      redpanda:
         condition: service_healthy
     entrypoint: /bin/sh
     command:
@@ -232,7 +231,7 @@ services:
         while true; do
           timestamp=$$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           message="{\"id\": $$i, \"type\": \"master_data\", \"name\": \"Product-$$i\", \"timestamp\": \"$$timestamp\"}"
-          echo "$$message" | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:9092 --topic master_data
+          echo "$$message" | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server redpanda:9092 --topic master_data
           echo "[Kafka->MQTT] Published to 'master_data': $$message"
           i=$$((i + 1))
           sleep 10
@@ -244,8 +243,8 @@ services:
     depends_on:
       mosquitto:
         condition: service_healthy
-      bridge:
-        condition: service_started
+      connect-sink:
+        condition: service_healthy
     entrypoint: /bin/sh
     command:
       - -c
@@ -262,8 +261,8 @@ services:
     depends_on:
       mosquitto2:
         condition: service_healthy
-      bridge2:
-        condition: service_started
+      connect-sink:
+        condition: service_healthy
     entrypoint: /bin/sh
     command:
       - -c
@@ -280,8 +279,8 @@ services:
     depends_on:
       mosquitto3:
         condition: service_healthy
-      bridge3:
-        condition: service_started
+      connect-sink:
+        condition: service_healthy
     entrypoint: /bin/sh
     command:
       - -c

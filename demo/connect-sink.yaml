@@ -1,0 +1,30 @@
+input:
+  kafka:
+    addresses: [ "redpanda:9092" ]
+    topics: [ master_data ]
+    consumer_group: master-data-to-mqtt
+    start_from_oldest: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+
+output:
+  broker:
+    outputs:
+      - mqtt:
+          urls: [ "tcp://mosquitto:1883" ]
+          topic: master_data
+          client_id: mqtt-sink-1
+          qos: 1
+      - mqtt:
+          urls: [ "tcp://mosquitto2:1884" ]
+          topic: master_data
+          client_id: mqtt-sink-2
+          qos: 1
+      - mqtt:
+          urls: [ "tcp://mosquitto3:1885" ]
+          topic: master_data
+          client_id: mqtt-sink-3
+          qos: 1
